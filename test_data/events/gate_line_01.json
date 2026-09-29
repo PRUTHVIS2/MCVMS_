@@ -1,0 +1,68 @@
+{
+  "clip": "gate_line_01.mp4",
+  "camera": "cam01",
+  "source_start": "2026-10-05T10:00:00+05:30",
+  "description": "Vehicles cross the line in both directions. Expect one event per crossing in the configured direction.",
+  "zones": [
+    {
+      "name": "Gate line",
+      "kind": "special",
+      "shape": "line",
+      "points": null,
+      "direction": "in"
+    }
+  ],
+  "rules": [
+    {
+      "name": "Vehicle entering",
+      "subject": {
+        "kind": "vehicle",
+        "where": [],
+        "min_box_px": 80
+      },
+      "trigger": {
+        "template": "line_crossing"
+      },
+      "confirm": {
+        "n_of_m": [
+          4,
+          5
+        ],
+        "min_confidence": 0.6
+      },
+      "schedule": null,
+      "valid": {
+        "from_date": null,
+        "until_date": null
+      },
+      "exemptions": {
+        "calendar_ids": [],
+        "note": ""
+      },
+      "response": {
+        "severity": "low",
+        "pre_roll_s": 15,
+        "hold_s": 20,
+        "max_clip_min": 5,
+        "cooldown_s": 30,
+        "alert_ttl_min": 240,
+        "escalation": []
+      }
+    }
+  ],
+  "expected_events": [
+    {
+      "rule": "Vehicle entering",
+      "start_s": null,
+      "end_s": null
+    },
+    {
+      "rule": "Vehicle entering",
+      "start_s": null,
+      "end_s": null
+    }
+  ],
+  "tolerance_s": 2.0,
+  "notes": "List one expected_events entry per crossing in the configured direction; delete extras.",
+  "_fill_in": "Replace every null. Times are seconds from the start of the clip. Delete this key when done."
+}

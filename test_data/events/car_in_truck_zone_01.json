@@ -1,0 +1,75 @@
+{
+  "clip": "car_in_truck_zone_01.mp4",
+  "camera": "cam01",
+  "source_start": "2026-10-05T10:00:00+05:30",
+  "description": "Only cars and bikes pass through the zone. Expect no events (heavy rule must not fire).",
+  "zones": [
+    {
+      "name": "Loading bay",
+      "kind": "special",
+      "shape": "polygon",
+      "points": null
+    }
+  ],
+  "rules": [
+    {
+      "name": "Heavy vehicle in loading bay",
+      "subject": {
+        "kind": "vehicle",
+        "where": [
+          {
+            "attr": "heavy",
+            "op": "eq",
+            "value": true
+          }
+        ],
+        "min_box_px": 80
+      },
+      "trigger": {
+        "template": "presence",
+        "min_seconds": 2
+      },
+      "confirm": {
+        "n_of_m": [
+          4,
+          5
+        ],
+        "min_confidence": 0.6
+      },
+      "schedule": {
+        "days": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri",
+          "sat"
+        ],
+        "from": "09:00",
+        "to": "17:00",
+        "timezone": "Asia/Kolkata"
+      },
+      "valid": {
+        "from_date": null,
+        "until_date": null
+      },
+      "exemptions": {
+        "calendar_ids": [],
+        "note": ""
+      },
+      "response": {
+        "severity": "critical",
+        "pre_roll_s": 15,
+        "hold_s": 20,
+        "max_clip_min": 5,
+        "cooldown_s": 30,
+        "alert_ttl_min": 240,
+        "escalation": []
+      }
+    }
+  ],
+  "expected_events": [],
+  "tolerance_s": 2.0,
+  "notes": "",
+  "_fill_in": "Replace every null. Times are seconds from the start of the clip. Delete this key when done."
+}

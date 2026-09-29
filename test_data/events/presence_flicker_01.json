@@ -1,0 +1,63 @@
+{
+  "clip": "presence_flicker_01.mp4",
+  "camera": "cam01",
+  "source_start": "2026-10-05T10:00:00+05:30",
+  "description": "Subject is partly hidden for about a second while inside the zone (occlusion). Expect ONE event, not several.",
+  "zones": [
+    {
+      "name": "Gate area",
+      "kind": "special",
+      "shape": "polygon",
+      "points": null
+    }
+  ],
+  "rules": [
+    {
+      "name": "Vehicle presence",
+      "subject": {
+        "kind": "vehicle",
+        "where": [],
+        "min_box_px": 80
+      },
+      "trigger": {
+        "template": "presence",
+        "min_seconds": 2
+      },
+      "confirm": {
+        "n_of_m": [
+          4,
+          5
+        ],
+        "min_confidence": 0.6
+      },
+      "schedule": null,
+      "valid": {
+        "from_date": null,
+        "until_date": null
+      },
+      "exemptions": {
+        "calendar_ids": [],
+        "note": ""
+      },
+      "response": {
+        "severity": "low",
+        "pre_roll_s": 15,
+        "hold_s": 20,
+        "max_clip_min": 5,
+        "cooldown_s": 30,
+        "alert_ttl_min": 240,
+        "escalation": []
+      }
+    }
+  ],
+  "expected_events": [
+    {
+      "rule": "Vehicle presence",
+      "start_s": null,
+      "end_s": null
+    }
+  ],
+  "tolerance_s": 2.0,
+  "notes": "",
+  "_fill_in": "Replace every null. Times are seconds from the start of the clip. Delete this key when done."
+}

@@ -1,0 +1,2 @@
+clip,camera,pass_no,approx_time_s,true_plate,plate_readable,category,colour,view,light,direction,notes
+example_gate_01.mp4,cam01,1,12.5,KA05AB1234,yes,car,white,front,day,in,EXAMPLE ROW - delete me

@@ -1,0 +1,71 @@
+{
+  "clip": "id_occluded_01.mp4",
+  "camera": "cam01",
+  "source_start": "2026-10-05T10:00:00+05:30",
+  "description": "People walk with the ID card hidden by a bag, jacket or turned around, or they walk away from the camera. Expect NO events (state must be unknown).",
+  "zones": [
+    {
+      "name": "Entrance walkway",
+      "kind": "special",
+      "shape": "polygon",
+      "points": null
+    }
+  ],
+  "rules": [
+    {
+      "name": "Person without visible ID",
+      "subject": {
+        "kind": "person",
+        "where": [
+          {
+            "attr": "id_state",
+            "op": "eq",
+            "value": "not_wearing"
+          }
+        ],
+        "min_box_px": 150
+      },
+      "trigger": {
+        "template": "presence",
+        "min_seconds": 1
+      },
+      "confirm": {
+        "n_of_m": [
+          4,
+          5
+        ],
+        "min_confidence": 0.6
+      },
+      "schedule": null,
+      "valid": {
+        "from_date": null,
+        "until_date": null
+      },
+      "exemptions": {
+        "calendar_ids": [],
+        "note": ""
+      },
+      "response": {
+        "severity": "low",
+        "pre_roll_s": 15,
+        "hold_s": 20,
+        "max_clip_min": 5,
+        "cooldown_s": 30,
+        "alert_ttl_min": 240,
+        "escalation": [
+          {
+            "if_count_in_window": {
+              "n": 5,
+              "window_min": 10
+            },
+            "severity": "medium"
+          }
+        ]
+      }
+    }
+  ],
+  "expected_events": [],
+  "tolerance_s": 2.0,
+  "notes": "This is the honesty test: the system may say unknown, it must not accuse.",
+  "_fill_in": "Replace every null. Times are seconds from the start of the clip. Delete this key when done."
+}

@@ -1,0 +1,14 @@
+data/
+dataset/
+.venv/
+node_modules/
+runs/
+.env
+*.pt
+*.mp4
+*.mkv
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+frontend/dist/
+BLOCKED.md.bak

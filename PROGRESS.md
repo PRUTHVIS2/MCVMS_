@@ -1,0 +1,57 @@
+# PROGRESS.md (the agent updates this after every step)
+
+Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped), `PASSED (synthetic)`, `PASSED` (all tests run and pass; human notified), `BLOCKED` (see BLOCKED.md), `APPROVED` (set by the human only).
+
+## Environment (agent fills at step 0)
+| Item | Value |
+|---|---|
+| OS / Python | |
+| GPU, driver, torch + CUDA | |
+| ultralytics version | |
+| FFmpeg / MediaMTX version | |
+| SQLite version + FTS5 trigram | |
+| EasyOCR / PaddleOCR importable | |
+| Node version | |
+
+## Decision gates (filled from measured results, never guessed)
+| Gate | Metric | Value | Decision |
+|---|---|---|---|
+| Step 11 plate baseline | passes labelled / exact-match / wrong-accepted / review share | | |
+| Step 17 ID-card baseline | tracks labelled / false-accusation rate / unknown rate / not_wearing recall | | |
+
+## Step status
+| Step | Title | Status | Date | Attempts | Notes |
+|---|---|---|---|---|---|
+| 0 | Skeleton and environment check | NOT_STARTED | | | |
+| 1 | Database, auth, roles, audit | NOT_STARTED | | | |
+| 2 | Frame sources, time sources, cameras, health | NOT_STARTED | | | |
+| 3 | Detection and tracking | NOT_STARTED | | | |
+| 4 | Zones, attributes and rule engine (pure) | NOT_STARTED | | | |
+| 5 | Recording and clips | NOT_STARTED | | | |
+| 6 | Events and alerts | NOT_STARTED | | | |
+| 7 | Camera, zone and rule management API | NOT_STARTED | | | |
+| 8 | Frontend: shell and live wall | NOT_STARTED | | | |
+| 9 | Frontend: events, playback, system | NOT_STARTED | | | |
+| 10 | Frontend: setup wizard (milestone A) | NOT_STARTED | | | |
+| 11 | Plate baseline harness (DECISION GATE) | NOT_STARTED | | | |
+| 12 | Vehicle attributes and plate pipeline (live) | NOT_STARTED | | | |
+| 13 | Registry and matching | NOT_STARTED | | | |
+| 14 | Vehicle identity, sightings, 10 s clips, review queue | NOT_STARTED | | | |
+| 15 | Vehicle-aware rules | NOT_STARTED | | | |
+| 16 | Frontend: vehicles, review, registry (milestone B) | NOT_STARTED | | | |
+| 17 | ID-card baseline harness (DECISION GATE) | NOT_STARTED | | | |
+| 18 | ID state resolver, live integration, exemptions | NOT_STARTED | | | |
+| 19 | Frontend: ID-card rule, evidence, feedback (milestone C) | NOT_STARTED | | | |
+| 20 | System health, benchmarks, retention | NOT_STARTED | | | |
+| 21 | Hardening, demo, handover | NOT_STARTED | | | |
+
+## Human checkpoint log (human fills)
+| Step | Checked on | Result | Notes / numbers |
+|---|---|---|---|
+
+## Measured results (only real numbers, with the command that produced them)
+| Metric | Value | Command / script | Date |
+|---|---|---|---|
+
+## Step reports
+(none yet)
