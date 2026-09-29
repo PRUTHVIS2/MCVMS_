@@ -1,61 +1,8 @@
-# config/storage_policy.yaml: what is stored, for how long, and what happens when things go wrong.
-# Values marked TODO_department must be set by the college before real deployment.
-
-continuous:
-  enabled: true
-  segment_seconds: 10
-  container: mkv                # survives a crash or power cut better than mp4
-  codec: copy                   # no re-encode
-  audio: false                  # privacy
-  retention_hours: 12           # only a source for cutting clips; raise if clips are cut late
-  # FAILURE: recorder dies -> supervisor restarts within 5 s, logs recording_gap; overlapping clips marked incomplete.
-
-clips:
-  reencode: true
-  # FAILURE: cut fails -> row needs_repair, retried every 5 min, 5 times, then one alert.
-
-retention:                      # days (TODO_department: set real values)
-  event_low: 30
-  event_medium: 60
-  event_critical: 180
-  sighting_resolved: 30
-  sighting_verify: 60
-  sighting_confirmed: 90
-  sighting_unregistered: 90
-  sighting_needs_review: until_resolved   # protected
-  pinned: keep
-  metadata_days: 365            # vehicles, sightings, events, plate reads (small; longer than video)
-  id_evidence_days: 30          # torso crops + snapshots for no-ID alerts (personal data; keep short)
-  plate_crops_days: 365
-  training_samples: keep
-  # WHY: routine footage should not pile up; anything a human still has to look at is never deleted before they do.
-
-disk:
-  warn_at_percent: 80
-  cleanup_at_percent: 90
-  cleanup_order: [continuous_oldest, sighting_resolved_expired, sighting_verify_expired, sighting_unregistered_expired, event_low_expired]
-  emergency_at_percent: 95      # stop continuous recording; keep creating events/sightings; skip new clip video; alert loudly
-  # Protected (open event, pending review) and pinned items are NEVER auto-deleted.
-
-index:
-  sidecar_json: true
-  rebuild_tool: "python -m app.tools.rebuild_index"
-
-integrity:
-  hash: sha256
-  verify_schedule: weekly
-  audit_actions: [view_clip, export_clip, delete_clip, pin_clip, correct_plate, confirm_plate, dismiss_alert, registry_change, zone_change, rule_change, user_change, merge_vehicle, split_vehicle, id_feedback]
-
-backup:
-  enabled: false                # set true once paths.backup exists
-  what: [pinned, sighting_confirmed, event_critical]
-  verify_hash_after_copy: true
-  retry_every_minutes: 10
-  alert_if_unreachable_hours: 1
-
-privacy_placeholders:
-  access_policy_defined_by: TODO_department
-  retention_limits_defined_by: TODO_department
-  signage_and_consent: TODO_department
-  dpdp_statement: TODO_department
-  # Plate text and person-related data are personal data. Never log them above DEBUG.
+continuous: {}
+clips: {}
+retention: {}
+disk: {}
+index: {}
+integrity: {}
+backup: {}
+privacy_placeholders: {}

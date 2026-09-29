@@ -1,0 +1,6 @@
+pyproject.toml
+mcvms_backend.egg-info/PKG-INFO
+mcvms_backend.egg-info/SOURCES.txt
+mcvms_backend.egg-info/dependency_links.txt
+mcvms_backend.egg-info/requires.txt
+mcvms_backend.egg-info/top_level.txt

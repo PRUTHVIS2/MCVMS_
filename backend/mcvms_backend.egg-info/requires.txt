@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+pyyaml
+torch
+ultralytics
+opencv-python
+easyocr
+httpx
+
+[dev]
+pytest
+pytest-asyncio
+ruff

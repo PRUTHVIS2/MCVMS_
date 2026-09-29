@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: mcvms-backend
+Version: 0.1.0
+Summary: MCVMS Backend
+Requires-Python: >=3.11
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+Requires-Dist: pydantic-settings
+Requires-Dist: pyyaml
+Requires-Dist: torch
+Requires-Dist: ultralytics
+Requires-Dist: opencv-python
+Requires-Dist: easyocr
+Requires-Dist: httpx
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
+Requires-Dist: ruff; extra == "dev"

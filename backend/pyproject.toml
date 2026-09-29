@@ -1,0 +1,31 @@
+[project]
+name = "mcvms-backend"
+version = "0.1.0"
+description = "MCVMS Backend"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic-settings",
+    "pyyaml",
+    "torch",
+    "ultralytics",
+    "opencv-python",
+    "easyocr",
+    "httpx"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff"
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

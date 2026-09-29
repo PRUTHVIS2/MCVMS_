@@ -5,13 +5,13 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 ## Environment (agent fills at step 0)
 | Item | Value |
 |---|---|
-| OS / Python | |
-| GPU, driver, torch + CUDA | |
-| ultralytics version | |
-| FFmpeg / MediaMTX version | |
-| SQLite version + FTS5 trigram | |
-| EasyOCR / PaddleOCR importable | |
-| Node version | |
+| OS / Python | Windows / 3.11.9 |
+| GPU, driver, torch + CUDA | NVIDIA GeForce RTX 4070 Ti, driver unknown, 2.14.0+cpu + False |
+| ultralytics version | 8.4.166 |
+| FFmpeg / MediaMTX version | 9.0.2-full_build-www.gyan.dev / unknown |
+| SQLite version + FTS5 trigram | 3.45.1 + True |
+| EasyOCR / PaddleOCR importable | EasyOCR 1.7.2 |
+| Node version | v24.19.0 |
 
 ## Decision gates (filled from measured results, never guessed)
 | Gate | Metric | Value | Decision |
@@ -22,7 +22,7 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 ## Step status
 | Step | Title | Status | Date | Attempts | Notes |
 |---|---|---|---|---|---|
-| 0 | Skeleton and environment check | NOT_STARTED | | | |
+| 0 | Skeleton and environment check | PASSED | 2026-09-30 | 1 | |
 | 1 | Database, auth, roles, audit | NOT_STARTED | | | |
 | 2 | Frame sources, time sources, cameras, health | NOT_STARTED | | | |
 | 3 | Detection and tracking | NOT_STARTED | | | |
