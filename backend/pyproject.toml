@@ -12,7 +12,13 @@ dependencies = [
     "ultralytics",
     "opencv-python",
     "easyocr",
-    "httpx"
+    "httpx",
+    "passlib[bcrypt]",
+    "argon2-cffi",
+    "pyjwt",
+    "cryptography",
+    "python-ulid",
+    "python-multipart"
 ]
 
 [project.optional-dependencies]

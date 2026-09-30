@@ -23,7 +23,7 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 | Step | Title | Status | Date | Attempts | Notes |
 |---|---|---|---|---|---|
 | 0 | Skeleton and environment check | PASSED | 2026-09-30 | 1 | |
-| 1 | Database, auth, roles, audit | NOT_STARTED | | | |
+| 1 | Database, auth, roles, audit | PASSED | 2026-09-30 | 1 | |
 | 2 | Frame sources, time sources, cameras, health | NOT_STARTED | | | |
 | 3 | Detection and tracking | NOT_STARTED | | | |
 | 4 | Zones, attributes and rule engine (pure) | NOT_STARTED | | | |
@@ -48,6 +48,9 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 ## Human checkpoint log (human fills)
 | Step | Checked on | Result | Notes / numbers |
 |---|---|---|---|
+| 0 |  run `python -m app.tools.env_check` and `uvicorn app.main:app`, open `/health`, run `npm run dev`. Confirm CUDA shows True. | Passed | Failed before for integrating tailwindcss with postcss but now it is working |
+| 1 |log in via the API docs page as owner, create an admin and an in-charge user, confirm the in-charge cannot call an admin endpoint.| Passed ||
+
 
 ## Measured results (only real numbers, with the command that produced them)
 | Metric | Value | Command / script | Date |

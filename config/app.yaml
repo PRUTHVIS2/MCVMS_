@@ -20,5 +20,7 @@ rules: {}
 training: {}
 health: {}
 privacy: {}
-auth: {}
+auth:
+  secret_key: this-is-a-super-secret-key-for-jwt-signing
+  fernet_key: 5q4-W7h3qE4q8T1xV0u9M5s5B6g2y8R9w3f8Z0j5F6c=
 api: {}

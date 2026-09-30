@@ -12,6 +12,10 @@ Requires-Dist: ultralytics
 Requires-Dist: opencv-python
 Requires-Dist: easyocr
 Requires-Dist: httpx
+Requires-Dist: passlib[bcrypt]
+Requires-Dist: argon2-cffi
+Requires-Dist: pyjwt
+Requires-Dist: cryptography
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: pytest-asyncio; extra == "dev"
