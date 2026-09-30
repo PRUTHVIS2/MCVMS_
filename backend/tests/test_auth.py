@@ -73,15 +73,17 @@ def test_permissions_matrix_skeleton():
     token = resp.json()["access_token"]
     
     # create in-charge
+    import ulid
+    unique_user = "inch_" + str(ulid.ULID())
     create_resp = client.post(
         "/api/v1/users", 
-        json={"username": "inch", "password": "pwd", "role": "incharge"},
+        json={"username": unique_user, "password": "pwd", "role": "incharge"},
         headers={"Authorization": f"Bearer {token}"}
     )
     assert create_resp.status_code == 200
     
     # login as incharge
-    inch_login = client.post("/api/v1/auth/login", data={"username": "inch", "password": "pwd"})
+    inch_login = client.post("/api/v1/auth/login", data={"username": unique_user, "password": "pwd"})
     inch_token = inch_login.json()["access_token"]
     
     # try to hit /api/v1/users as incharge (should be forbidden since it's require_owner)
