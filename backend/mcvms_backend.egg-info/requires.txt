@@ -11,6 +11,8 @@ passlib[bcrypt]
 argon2-cffi
 pyjwt
 cryptography
+python-ulid
+python-multipart
 
 [dev]
 pytest

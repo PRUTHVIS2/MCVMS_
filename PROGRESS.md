@@ -25,7 +25,7 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 | 0 | Skeleton and environment check | PASSED | 2026-09-30 | 1 | |
 | 1 | Database, auth, roles, audit | PASSED | 2026-09-30 | 1 | |
 | 2 | Frame sources, time sources, cameras, health | PASSED | 2026-09-30 | 1 | |
-| 3 | Detection and tracking | NOT_STARTED | | | |
+| 3 | Detection and tracking | PASSED | 2026-09-30 | 1 | |
 | 4 | Zones, attributes and rule engine (pure) | NOT_STARTED | | | |
 | 5 | Recording and clips | NOT_STARTED | | | |
 | 6 | Events and alerts | NOT_STARTED | | | |
