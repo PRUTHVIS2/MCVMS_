@@ -1,16 +1,18 @@
 import pytest
 from fastapi.testclient import TestClient
-from app.main import app
+
 from app.core.db import get_connection
+from app.main import app
 
 client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def setup_db():
-    from app.tools.migrate import migrate
+    import ulid
+
     from app.core.clock import Clock
     from app.core.security import get_password_hash
-    import ulid
+    from app.tools.migrate import migrate
     migrate(Clock())
     
     conn = get_connection()

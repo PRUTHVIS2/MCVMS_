@@ -1,7 +1,8 @@
 import sqlite3
 import threading
-from typing import Generator
+from collections.abc import Generator
 from pathlib import Path
+
 from app.config import config
 
 local = threading.local()

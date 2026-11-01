@@ -1,7 +1,7 @@
 import argparse
 import subprocess
-import time
 import sys
+
 
 def main():
     parser = argparse.ArgumentParser(description="Fake Camera RTSP stream loop")

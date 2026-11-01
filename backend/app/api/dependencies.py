@@ -1,10 +1,12 @@
+import sqlite3
 import time
 from collections import defaultdict
-from typing import Annotated, Generator
+from typing import Annotated
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-import sqlite3
-from app.core.db import get_connection, get_db
+
+from app.core.db import get_db
 from app.core.security import decode_access_token
 from app.models.user import UserOut
 

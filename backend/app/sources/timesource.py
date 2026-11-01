@@ -1,7 +1,8 @@
-import time
-from datetime import datetime, timezone
 import re
+from datetime import UTC, datetime
+
 from app.core.clock import Clock
+
 
 class TimeSource:
     def now_ms(self) -> int:
@@ -37,6 +38,6 @@ class FileTimeSource(TimeSource):
         if m:
             dt = datetime.strptime(m.group(1), "%Y%m%d_%H%M%S")
             # assuming UTC for simplicity, or local timezone
-            ts_ms = int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+            ts_ms = int(dt.replace(tzinfo=UTC).timestamp() * 1000)
             return cls(ts_ms)
         return cls(0)

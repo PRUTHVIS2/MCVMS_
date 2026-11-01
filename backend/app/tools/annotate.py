@@ -1,10 +1,13 @@
 import argparse
-import cv2
 import time
+
+import cv2
+
 from app.sources.filesource import FileSource
 from app.sources.timesource import FileTimeSource
 from app.vision.detector import Detector
 from app.vision.tracker import Tracker
+
 
 def main():
     parser = argparse.ArgumentParser()

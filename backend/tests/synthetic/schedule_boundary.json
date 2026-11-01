@@ -1,0 +1,76 @@
+{
+  "clip": "schedule_boundary.mp4",
+  "camera": "cam01",
+  "synthetic": true,
+  "source_start": "2026-10-05T20:00:00+05:30",
+  "description": "Truck enters zone outside scheduled hours. Expected 0 events.",
+  "zones": [
+    {
+      "name": "Loading bay",
+      "kind": "special",
+      "shape": "polygon",
+      "points": [
+        [
+          200,
+          100
+        ],
+        [
+          500,
+          100
+        ],
+        [
+          500,
+          300
+        ],
+        [
+          200,
+          300
+        ]
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "name": "Heavy vehicle in loading bay",
+      "subject": {
+        "kind": "vehicle",
+        "where": [
+          {
+            "attr": "heavy",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "trigger": {
+        "template": "presence",
+        "min_seconds": 1.0
+      },
+      "confirm": {
+        "n_of_m": [
+          4,
+          5
+        ],
+        "min_confidence": 0.6
+      },
+      "schedule": {
+        "days": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "from": "09:00",
+        "to": "17:00",
+        "timezone": "Asia/Kolkata"
+      },
+      "response": {
+        "severity": "critical",
+        "cooldown_s": 30.0
+      }
+    }
+  ],
+  "expected_events": [],
+  "tolerance_s": 0.5
+}

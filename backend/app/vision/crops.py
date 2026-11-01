@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def crop_full_res(frame: np.ndarray, xyxy: tuple[float, float, float, float], pad_frac: float = 0.0) -> np.ndarray:
     """
     Crops a region from the full-resolution frame, with optional padding.

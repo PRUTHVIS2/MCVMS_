@@ -1,5 +1,6 @@
+
 from pydantic import BaseModel
-from typing import List
+
 
 class UserCreate(BaseModel):
     username: str
@@ -17,7 +18,7 @@ class UserOut(BaseModel):
     role: str
     active: bool
     created_at: int
-    cameras: List[str] = []
+    cameras: list[str] = []
 
 class LoginData(BaseModel):
     username: str

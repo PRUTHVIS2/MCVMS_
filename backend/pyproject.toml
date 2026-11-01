@@ -18,7 +18,8 @@ dependencies = [
     "pyjwt",
     "cryptography",
     "python-ulid",
-    "python-multipart"
+    "python-multipart",
+    "tzdata"
 ]
 
 [tool.setuptools]

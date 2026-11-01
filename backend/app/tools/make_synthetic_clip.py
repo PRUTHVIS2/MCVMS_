@@ -1,6 +1,8 @@
+import argparse
+
 import cv2
 import numpy as np
-import argparse
+
 
 def main():
     parser = argparse.ArgumentParser(description="Make a synthetic clip with moving boxes")

@@ -1,7 +1,10 @@
-import cv2
 import time
-from typing import Generator, Tuple
+from collections.abc import Generator
+
+import cv2
+
 from app.sources.timesource import FileTimeSource
+
 
 class FileSource:
     def __init__(self, filepath: str, time_source: FileTimeSource, paced: bool = False):
@@ -17,8 +20,10 @@ class FileSource:
             self.fps = 25.0
             
         self.frame_time_ms = int(1000.0 / self.fps)
+        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
-    def iter_frames(self) -> Generator[Tuple[object, int], None, None]:
+    def iter_frames(self) -> Generator[tuple[object, int], None, None]:
         while True:
             start_t = time.time()
             ret, frame = self.cap.read()

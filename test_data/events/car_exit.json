@@ -1,0 +1,70 @@
+{
+    "clip": "car_exit.mp4",
+    "camera": "cam01",
+    "source_start": "2026-10-05T10:00:00+05:30",
+    "description": "One car drives out through the exit gate and crosses the line once. Expect one crossing event.",
+    "zones": [
+        {
+            "name": "Exit gate line",
+            "kind": "special",
+            "shape": "line",
+            "points": [
+                [
+                    0.062,
+                    0.711
+                ],
+                [
+                    0.996,
+                    0.392
+                ]
+            ],
+            "direction": "in"
+        }
+    ],
+    "rules": [
+        {
+            "name": "Vehicle crossing",
+            "subject": {
+                "kind": "vehicle",
+                "where": [],
+                "min_box_px": 80
+            },
+            "trigger": {
+                "template": "line_crossing"
+            },
+            "confirm": {
+                "n_of_m": [
+                    4,
+                    5
+                ],
+                "min_confidence": 0.6
+            },
+            "schedule": null,
+            "valid": {
+                "from_date": null,
+                "until_date": null
+            },
+            "exemptions": {
+                "calendar_ids": [],
+                "note": ""
+            },
+            "response": {
+                "severity": "low",
+                "pre_roll_s": 15,
+                "hold_s": 20,
+                "max_clip_min": 5,
+                "cooldown_s": 30,
+                "alert_ttl_min": 240,
+                "escalation": []
+            }
+        }
+    ],
+    "expected_events": [
+        {
+            "rule": "Vehicle crossing",
+            "start_s": 2
+        }
+    ],
+    "tolerance_s": 2.0,
+    "notes": ""
+}

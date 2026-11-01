@@ -1,11 +1,13 @@
-from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status, Response
-from fastapi.security import OAuth2PasswordRequestForm
 import sqlite3
-from app.core.db import get_db
-from app.core.security import verify_password, create_access_token
-from app.core.audit import log_audit
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.security import OAuth2PasswordRequestForm
+
 from app.api.dependencies import get_current_user, rate_limit_login
+from app.core.audit import log_audit
+from app.core.db import get_db
+from app.core.security import create_access_token, verify_password
 from app.models.user import UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])

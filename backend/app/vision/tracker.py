@@ -1,10 +1,12 @@
-import numpy as np
 from types import SimpleNamespace
-from ultralytics.trackers.byte_tracker import BYTETracker
-from ultralytics.engine.results import Boxes
+
+import numpy as np
 import torch
-from typing import List, Optional
+from ultralytics.engine.results import Boxes
+from ultralytics.trackers.byte_tracker import BYTETracker
+
 from app.core.types import Detection, TrackedObject
+
 
 class Tracker:
     def __init__(self, fps: int = 25):
@@ -20,7 +22,7 @@ class Tracker:
         self.tracker = BYTETracker(args)
         self.frame_id = 0
         
-    def update(self, detections: List[Detection], img: np.ndarray, ts_ms: int) -> List[TrackedObject]:
+    def update(self, detections: list[Detection], img: np.ndarray, ts_ms: int) -> list[TrackedObject]:
         self.frame_id += 1
         if not detections:
             # BYTETracker doesn't like empty boxes tensor sometimes, or we can just pass empty
@@ -44,7 +46,7 @@ class Tracker:
         
         try:
             tracks = self.tracker.update(boxes, img=img)
-        except Exception as e:
+        except Exception:
             # Fallback if tracker fails for some reason
             tracks = np.empty((0, 8))
             

@@ -22,4 +22,4 @@ Format: `YYYY-MM-DD | decision | reason | alternative considered | who`.
 - Who receives alerts (dashboard only for now)
 
 ## Log
-(none yet)
+- 2026-11-01 | Timezone resolution fallback in schedule evaluator | Windows standard library does not ship IANA tzdata, which causes zoneinfo.ZoneInfo("Asia/Kolkata") to fail without the optional tzdata package | Require external system configuration | agent

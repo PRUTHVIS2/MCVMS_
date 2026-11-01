@@ -1,9 +1,9 @@
+import logging
 import threading
 import time
+
 import cv2
-import logging
-from typing import Optional, Tuple
-from app.sources.timesource import WallTimeSource
+
 from app.core.clock import Clock
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ class RTSPSource:
         if self.thread:
             self.thread.join(timeout=2.0)
             
-    def get_latest(self) -> Optional[Tuple[object, int]]:
+    def get_latest(self) -> tuple[object, int] | None:
         with self.lock:
             return (self.latest_frame.copy(), self.latest_ts) if self.latest_frame is not None else None
             

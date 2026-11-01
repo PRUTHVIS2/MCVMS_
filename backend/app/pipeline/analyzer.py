@@ -1,12 +1,13 @@
-import threading
-import time
 import logging
 import queue
-from typing import Callable, List, Optional
+import threading
+import time
+from collections.abc import Callable
+
+from app.core.types import TrackedFrame
 from app.sources.rtsp import RTSPSource
 from app.vision.detector import Detector
 from app.vision.tracker import Tracker
-from app.core.types import TrackedFrame
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,9 @@ class Analyzer:
         self.detector = detector
         self.tracker = tracker
         
-        self.subscribers: List[tuple[Callable[[TrackedFrame], None], 'queue.Queue']] = []
+        self.subscribers: list[tuple[Callable[[TrackedFrame], None], queue.Queue]] = []
         self.running = False
-        self.thread: Optional[threading.Thread] = None
+        self.thread: threading.Thread | None = None
         
     def subscribe(self, callback: Callable[[TrackedFrame], None], maxsize: int = 10):
         import queue

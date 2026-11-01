@@ -1,7 +1,8 @@
 import logging
+
 import torch
 from ultralytics import YOLO
-from typing import List, Dict, Tuple
+
 from app.core.types import Detection
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class Detector:
             raise
 
         # Class map: COCO mapping (0: person, 2: car, 3: motorcycle, 5: bus, 7: truck)
-        self.class_map: Dict[int, str] = {
+        self.class_map: dict[int, str] = {
             0: "person",
             2: "car",
             3: "two_wheeler",

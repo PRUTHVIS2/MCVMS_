@@ -1,0 +1,82 @@
+{
+  "clip": "heavy_truck_in_zone.mp4",
+  "camera": "cam01",
+  "synthetic": true,
+  "source_start": "2026-10-05T10:00:00+05:30",
+  "description": "Truck enters loading bay and stays 3s. Presence min_seconds=1.0.",
+  "zones": [
+    {
+      "name": "Loading bay",
+      "kind": "special",
+      "shape": "polygon",
+      "points": [
+        [
+          200,
+          100
+        ],
+        [
+          500,
+          100
+        ],
+        [
+          500,
+          300
+        ],
+        [
+          200,
+          300
+        ]
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "name": "Heavy vehicle in loading bay",
+      "subject": {
+        "kind": "vehicle",
+        "where": [
+          {
+            "attr": "heavy",
+            "op": "eq",
+            "value": true
+          }
+        ]
+      },
+      "trigger": {
+        "template": "presence",
+        "min_seconds": 1.0
+      },
+      "confirm": {
+        "n_of_m": [
+          4,
+          5
+        ],
+        "min_confidence": 0.6
+      },
+      "schedule": {
+        "days": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "from": "09:00",
+        "to": "17:00",
+        "timezone": "Asia/Kolkata"
+      },
+      "response": {
+        "severity": "critical",
+        "cooldown_s": 30.0
+      }
+    }
+  ],
+  "expected_events": [
+    {
+      "rule": "Heavy vehicle in loading bay",
+      "start_s": 2.0,
+      "end_s": 4.0
+    }
+  ],
+  "tolerance_s": 0.5
+}

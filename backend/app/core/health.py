@@ -1,6 +1,9 @@
-from pydantic import BaseModel
 import sqlite3
+
+from pydantic import BaseModel
+
 from app.core.db import get_connection
+
 
 class HealthStatus(BaseModel):
     status: str

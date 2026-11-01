@@ -1,7 +1,8 @@
 import logging
+
 import torch
 from ultralytics import YOLO
-from typing import List
+
 from app.core.types import Detection
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class PoseDetector:
                 logger.error(f"Failed to load Pose model: {e}")
                 raise
                 
-    def detect(self, frame, conf: float = 0.25) -> List[Detection]:
+    def detect(self, frame, conf: float = 0.25) -> list[Detection]:
         self._lazy_load()
         results = self.model(frame, imgsz=self.imgsz, verbose=False, conf=conf, classes=[0]) # Only person
         

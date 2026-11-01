@@ -1,17 +1,19 @@
-from typing import Annotated, List
-from fastapi import APIRouter, Depends, HTTPException, status
 import sqlite3
+from typing import Annotated
+
+import ulid
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.api.dependencies import require_owner
+from app.core.audit import log_audit
+from app.core.clock import Clock
 from app.core.db import get_db
 from app.core.security import get_password_hash
-from app.core.audit import log_audit
-from app.api.dependencies import require_owner
-from app.models.user import UserCreate, UserOut, UserUpdate
-import ulid
-from app.core.clock import Clock
+from app.models.user import UserCreate, UserOut
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-@router.get("", response_model=List[UserOut])
+@router.get("", response_model=list[UserOut])
 def list_users(
     db: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserOut, Depends(require_owner)]

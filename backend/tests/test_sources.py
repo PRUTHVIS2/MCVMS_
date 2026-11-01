@@ -1,10 +1,11 @@
-import pytest
 import time
 from unittest.mock import MagicMock, patch
-from app.sources.timesource import FileTimeSource, WallTimeSource
+
+from app.core.clock import SimulatedClock
 from app.sources.filesource import FileSource
 from app.sources.rtsp import RTSPSource
-from app.core.clock import SimulatedClock
+from app.sources.timesource import FileTimeSource
+
 
 def test_file_timesource():
     ts = FileTimeSource.from_filename("20261005_083000.mp4")

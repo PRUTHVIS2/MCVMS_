@@ -1,0 +1,53 @@
+{
+  "clip": "line_crossing.mp4",
+  "camera": "cam01",
+  "synthetic": true,
+  "source_start": "2026-10-05T10:00:00+05:30",
+  "description": "Car crosses vertical line at x=320 moving left to right (in).",
+  "zones": [
+    {
+      "name": "Gate Line",
+      "kind": "special",
+      "shape": "line",
+      "points": [
+        [
+          320,
+          310
+        ],
+        [
+          320,
+          50
+        ]
+      ],
+      "direction": "in"
+    }
+  ],
+  "rules": [
+    {
+      "name": "Vehicle enters gate",
+      "subject": {
+        "kind": "vehicle"
+      },
+      "trigger": {
+        "template": "line_crossing"
+      },
+      "confirm": {
+        "n_of_m": [
+          1,
+          1
+        ],
+        "min_confidence": 0.6
+      },
+      "response": {
+        "severity": "low"
+      }
+    }
+  ],
+  "expected_events": [
+    {
+      "rule": "Vehicle enters gate",
+      "start_s": 2.0
+    }
+  ],
+  "tolerance_s": 0.5
+}

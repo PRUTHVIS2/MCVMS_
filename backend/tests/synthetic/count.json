@@ -1,0 +1,55 @@
+{
+  "clip": "count.mp4",
+  "camera": "cam01",
+  "synthetic": true,
+  "source_start": "2026-10-05T10:00:00+05:30",
+  "description": "Count threshold of 2 cars inside zone for 1.0s.",
+  "zones": [
+    {
+      "name": "Courtyard",
+      "kind": "special",
+      "shape": "polygon",
+      "points": [
+        [
+          100,
+          50
+        ],
+        [
+          550,
+          50
+        ],
+        [
+          550,
+          320
+        ],
+        [
+          100,
+          320
+        ]
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "name": "Vehicle congestion",
+      "subject": {
+        "kind": "vehicle"
+      },
+      "trigger": {
+        "template": "count_threshold",
+        "count": 2,
+        "min_seconds": 1.0
+      },
+      "response": {
+        "severity": "low"
+      }
+    }
+  ],
+  "expected_events": [
+    {
+      "rule": "Vehicle congestion",
+      "start_s": 3.0
+    }
+  ],
+  "tolerance_s": 0.5
+}

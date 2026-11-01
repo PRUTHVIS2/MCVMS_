@@ -1,6 +1,8 @@
-from app.core.db import get_connection
-from app.core.clock import Clock
 import json
+
+from app.core.clock import Clock
+from app.core.db import get_connection
+
 
 def log_audit(user_id: str | None, action: str, target: str, detail: dict | None = None):
     conn = get_connection()

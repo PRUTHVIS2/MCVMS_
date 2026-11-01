@@ -1,8 +1,9 @@
-import os
 import sqlite3
 from pathlib import Path
-from app.core.db import get_connection
+
 from app.core.clock import Clock
+from app.core.db import get_connection
+
 
 def migrate(clock: Clock):
     conn = get_connection()

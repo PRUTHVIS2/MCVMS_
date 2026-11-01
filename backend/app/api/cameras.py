@@ -1,17 +1,17 @@
-from typing import Annotated, List
+import json
+import sqlite3
+from typing import Annotated
+
+import cv2
+import ulid
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
-import sqlite3
-import ulid
-import cv2
-import json
 
-from app.core.db import get_db
 from app.api.dependencies import require_admin
-from app.models.user import UserOut
-from app.core.security import encrypt_url, decrypt_url
 from app.core.clock import Clock
-from app.sources.rtsp import RTSPSource
+from app.core.db import get_db
+from app.core.security import decrypt_url, encrypt_url
+from app.models.user import UserOut
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 
@@ -30,7 +30,7 @@ class CameraOut(BaseModel):
     fps: float | None
     status: str
 
-@router.get("", response_model=List[CameraOut])
+@router.get("", response_model=list[CameraOut])
 def list_cameras(
     db: Annotated[sqlite3.Connection, Depends(get_db)],
     current_user: Annotated[UserOut, Depends(require_admin)]

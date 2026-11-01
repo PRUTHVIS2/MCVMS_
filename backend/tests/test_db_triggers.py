@@ -1,13 +1,16 @@
-import pytest
 import sqlite3
+
+import pytest
+
 from app.core.db import get_connection
+
 
 @pytest.fixture(autouse=True)
 def clean_db():
     conn = get_connection()
     # Migration is already run via the app startup or can be run manually here if not
-    from app.tools.migrate import migrate
     from app.core.clock import Clock
+    from app.tools.migrate import migrate
     migrate(Clock())
     
     # We will clean the tables before each test

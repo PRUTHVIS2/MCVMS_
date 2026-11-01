@@ -1,12 +1,15 @@
-import pytest
-import numpy as np
 import time
 from unittest.mock import MagicMock
-from app.vision.crops import crop_full_res
-from app.vision.detector import Detector
+
+import numpy as np
+import pytest
+
 from app.core.types import Detection
 from app.pipeline.analyzer import Analyzer
+from app.vision.crops import crop_full_res
+from app.vision.detector import Detector
 from app.vision.tracker import Tracker
+
 
 def test_crop_full_res():
     # create a pattern
@@ -110,6 +113,8 @@ def test_class_map_filters():
     assert detections[1].cls == "car"
 
 import torch
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
 def test_analyzer_slow_consumer():
     source = MagicMock()
