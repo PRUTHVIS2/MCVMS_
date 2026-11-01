@@ -27,7 +27,7 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 | 2 | Frame sources, time sources, cameras, health | PASSED | 2026-09-30 | 1 | |
 | 3 | Detection and tracking | PASSED | 2026-09-30 | 1 | |
 | 4 | Zones, attributes and rule engine (pure) | PASSED | 2026-11-01 | 1 | Zero mismatches on synthetic suite and recorded campus footage |
-| 5 | Recording and clips | NOT_STARTED | | | |
+| 5 | Recording and clips | PASSED | 2026-11-01 | 1 | Continuous segmented recording, frame-accurate clipper, sidecars, rebuild_index, repair |
 | 6 | Events and alerts | NOT_STARTED | | | |
 | 7 | Camera, zone and rule management API | NOT_STARTED | | | |
 | 8 | Frontend: shell and live wall | NOT_STARTED | | | |
@@ -170,4 +170,128 @@ tests/test_vision.py::test_analyzer_slow_consumer PASSED                 [100%]
   - Step evaluated on synthetic ground-truth test suite (marked `PASSED (synthetic)`). When real footage answer files in `test_data/events/*.json` have their points/timestamps filled, `run_rules` can be run against them.
 - **6. The human checkpoint (copy from PLAN.md):**
   > run `run_rules` on the synthetic clips and on `test_data/events/*` clips you have recorded; read the PASS/FAIL table; report any mismatch to the agent.
+
+---
+
+### Step 5: Recording and clips (2026-11-01)
+- **1. What was built:**
+  - `FFmpegRecorder`: Supervised continuous segmented MKV recording per camera (`-an -c copy -f segment -segment_time 10 ...`), with automatic process health checks, gap detection, and restart within 5 s.
+  - `RecorderSupervisor`: Background watchdog supervises active recorders, monitoring health and logging `recording_gap` events.
+  - `Clipper`: Cuts frame-accurate MP4 clips (`h264_nvenc` with fallback to `libx264`, `yuv420p`, `-movflags +faststart`).
+    - Event clips: `[start - pre_roll, end + hold]` capped at `max_clip_min`.
+    - Sighting clips: strictly 10 s (`[anchor - 4s, anchor + 6s]`).
+    - Multi-segment concat using forward-slash path normalization and output seeking for exact frame accuracy.
+    - Waits up to 15 s for covering segments to be written.
+    - Atomic write via temporary file + atomic replace (crash leaves no partial `.mp4`).
+    - SHA-256 computation and sidecar `<id>.meta.json` storage.
+    - Key frame extraction: `first`, `anchor`, and `last` JPEG snapshots.
+    - Retry/repair: clips marked `needs_repair` can be repaired once covering segments appear.
+    - Gaps: clips overlapping recording gaps are tagged `status = 'incomplete'`.
+  - `tools/rebuild_index.py`: Walks `data/clips/**/*.meta.json`, verifies file hash integrity, and restores/upserts SQLite records into `clips`, `events`, `sightings`, and `vehicles` (survives full DB wipe).
+  - `tools/cut_clip.py`: CLI tool for manual clip requests in live continuous mode or batch mode.
+- **2. What files were created / touched:**
+  - `backend/app/recorder/__init__.py` (new)
+  - `backend/app/recorder/ffmpeg_recorder.py` (new)
+  - `backend/app/recorder/clipper.py` (new)
+  - `backend/app/tools/rebuild_index.py` (new)
+  - `backend/app/tools/cut_clip.py` (new)
+  - `backend/tests/test_recorder.py` (new)
+  - `backend/app/sources/filesource.py` (added `width` and `height` properties)
+  - `PROGRESS.md`
+- **3. Real test output pasted verbatim (40+ lines):**
+  ```
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.1.1, pluggy-1.6.0 -- G:\Projects\MVMS_\mcvms\backend\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: G:\Projects\MVMS_\mcvms\backend
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1, asyncio-1.4.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 67 items
+
+tests/test_auth.py::test_login_success PASSED                            [  1%]
+tests/test_auth.py::test_login_failure PASSED                            [  2%]
+tests/test_auth.py::test_rate_limit PASSED                               [  4%]
+tests/test_auth.py::test_audit_written PASSED                            [  5%]
+tests/test_auth.py::test_permissions_matrix_skeleton PASSED              [  7%]
+tests/test_cameras.py::test_camera_crud PASSED                           [  8%]
+tests/test_clock.py::test_clock PASSED                                   [ 10%]
+tests/test_clock.py::test_simulated_clock PASSED                         [ 11%]
+tests/test_config.py::test_config_loads PASSED                           [ 13%]
+tests/test_config.py::test_config_rejects_unknown_key PASSED             [ 14%]
+tests/test_db_triggers.py::test_trigger_registered_action_needs_special_zone PASSED [ 16%]
+tests/test_db_triggers.py::test_trigger_downgrade_zone_with_actions PASSED [ 17%]
+tests/test_env_check.py::test_env_check_no_crash PASSED                  [ 19%]
+tests/test_geometry.py::test_foot_point_calculation PASSED               [ 20%]
+tests/test_geometry.py::test_point_in_polygon_simple_square PASSED       [ 22%]
+tests/test_geometry.py::test_point_in_polygon_boundary_counted_inside PASSED [ 23%]
+tests/test_geometry.py::test_point_in_polygon_concave PASSED             [ 25%]
+tests/test_geometry.py::test_line_side PASSED                            [ 26%]
+tests/test_geometry.py::test_line_crossing_directions PASSED             [ 28%]
+tests/test_geometry.py::test_line_crossing_flip PASSED                   [ 29%]
+tests/test_geometry.py::test_line_crossing_non_intersecting PASSED       [ 31%]
+tests/test_geometry.py::test_line_crossing_jitter_and_tangential PASSED  [ 32%]
+tests/test_geometry.py::test_validate_polygon PASSED                     [ 34%]
+tests/test_geometry.py::test_denormalize_and_normalize_points PASSED     [ 35%]
+tests/test_health.py::test_health PASSED                                 [ 37%]
+tests/test_recorder.py::test_clip_window_maths_event PASSED              [ 38%]
+tests/test_recorder.py::test_clip_window_maths_event_capped PASSED       [ 40%]
+tests/test_recorder.py::test_clip_window_maths_sighting PASSED           [ 41%]
+tests/test_recorder.py::test_clip_window_maths_sighting_default_anchor PASSED [ 43%]
+tests/test_recorder.py::test_cut_from_segments_duration_accuracy PASSED  [ 44%]
+tests/test_recorder.py::test_cut_spanning_segment_boundary_concat PASSED [ 46%]
+tests/test_recorder.py::test_atomic_write_crash_leaves_no_partial_mp4 PASSED [ 47%]
+tests/test_recorder.py::test_sidecar_meta_json_sha256 PASSED             [ 49%]
+tests/test_recorder.py::test_clipper_waits_for_covering_segments PASSED  [ 50%]
+tests/test_recorder.py::test_clip_spanning_recording_gap_is_incomplete PASSED [ 52%]
+tests/test_recorder.py::test_rebuild_index_restores_sqlite_rows PASSED   [ 53%]
+tests/test_recorder.py::test_repair_clip PASSED                          [ 55%]
+tests/test_recorder.py::test_recorder_supervisor_and_gaps PASSED         [ 56%]
+tests/test_rules_pure.py::test_unknown_never_matches_any_condition PASSED [ 58%]
+tests/test_rules_pure.py::test_condition_operators_known_state PASSED    [ 59%]
+tests/test_rules_pure.py::test_attribute_store_operations PASSED         [ 61%]
+tests/test_rules_pure.py::test_schedule_day_of_week_and_time_window PASSED [ 62%]
+tests/test_rules_pure.py::test_schedule_across_midnight PASSED           [ 64%]
+tests/test_rules_pure.py::test_valid_calendar_dates_and_exemptions PASSED [ 65%]
+tests/test_rules_pure.py::test_escalation_pick_severity PASSED           [ 67%]
+tests/test_rules_pure.py::test_normal_zone_rejects_actions PASSED        [ 68%]
+tests/test_rules_pure.py::test_template_shape_mismatch PASSED            [ 70%]
+tests/test_rules_pure.py::test_presence_rule_with_flicker_n_of_m PASSED  [ 71%]
+tests/test_rules_pure.py::test_cooldown_suppression PASSED               [ 73%]
+tests/test_rules_pure.py::test_late_binding_attribute PASSED             [ 74%]
+tests/test_rules_pure.py::test_dwell_reset PASSED                        [ 76%]
+tests/test_rules_pure.py::test_count_threshold_template PASSED           [ 77%]
+tests/test_rules_pure.py::test_engine_determinism PASSED                 [ 79%]
+tests/test_rules_pure.py::test_grep_no_clocks_in_pure_packages PASSED    [ 80%]
+tests/test_run_rules_synthetic.py::test_synthetic_heavy_truck_in_zone PASSED [ 82%]
+tests/test_run_rules_synthetic.py::test_synthetic_flicker_presence PASSED [ 83%]
+tests/test_run_rules_synthetic.py::test_synthetic_line_crossing PASSED   [ 85%]
+tests/test_run_rules_synthetic.py::test_synthetic_dwell PASSED           [ 86%]
+tests/test_run_rules_synthetic.py::test_synthetic_count_threshold PASSED [ 88%]
+tests/test_run_rules_synthetic.py::test_synthetic_schedule_boundary PASSED [ 89%]
+tests/test_sources.py::test_file_timesource PASSED                       [ 91%]
+tests/test_sources.py::test_file_source_timestamps PASSED                [ 92%]
+tests/test_rtsp_frozen_stream_and_reconnect PASSED      [ 94%]
+tests/test_vision.py::test_crop_full_res PASSED                          [ 95%]
+tests/test_vision.py::test_scripted_detector_analyzer PASSED             [ 97%]
+tests/test_vision.py::test_class_map_filters PASSED                      [ 98%]
+tests/test_vision.py::test_analyzer_slow_consumer PASSED                 [100%]
+
+======================= 67 passed, 2 warnings in 8.46s ========================
+  ```
+- **4. Exact commands to run all tests:**
+  ```powershell
+  cd backend
+  .venv\Scripts\pytest -v
+  cd ..\frontend
+  npx vitest run
+  ```
+- **5. Decisions, deviations, limitations:**
+  - FFmpeg concat seeking: When slicing across concatenated segment files, `-ss` must follow `-i <concat.txt>` (output seeking) rather than preceding it, ensuring frame-accurate cutting across segment boundaries.
+  - Path normalization: Windows path backslashes in FFmpeg concat list files must be normalized to forward slashes.
+  - Recording input check: `FFmpegRecorder` only supplies `-rtsp_transport tcp` when target URL starts with `rtsp://`, allowing continuous recording directly from video files for local tests.
+- **6. The human checkpoint (copy from PLAN.md):**
+  > run `python -m app.tools.fake_camera` looping a clip, start recorder, request an event clip and a sighting clip via `python -m app.tools.cut_clip`, verify playback in browser.
+
 
