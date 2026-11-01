@@ -31,7 +31,7 @@ def main():
     frames_processed = 0
     start_time = time.time()
     
-    batch_size = 16
+    batch_size = 8
     frame_batch = []
     ts_batch = []
     

@@ -102,7 +102,7 @@ def test_class_map_filters():
             ]
             self.keypoints = None
     
-    det.model = MagicMock(return_value=[MockResult()])
+    det.model.predict = MagicMock(return_value=[MockResult()])
     
     detections = det.detect(np.zeros((10,10,3), dtype=np.uint8))
     assert len(detections) == 2

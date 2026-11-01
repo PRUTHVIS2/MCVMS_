@@ -50,7 +50,8 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 |---|---|---|---|
 | 0 |  run `python -m app.tools.env_check` and `uvicorn app.main:app`, open `/health`, run `npm run dev`. Confirm CUDA shows True. | Passed | Failed before for integrating tailwindcss with postcss but now it is working |
 | 1 |log in via the API docs page as owner, create an admin and an in-charge user, confirm the in-charge cannot call an admin endpoint.| Passed ||
-| 2 | start MediaMTX, `fake_camera` for cam01, add the camera, see snapshot, kill the stream and watch status flip to offline then back.| Passed ||
+| 2 |start MediaMTX, `fake_camera` for cam01, add the camera, see snapshot, kill the stream and watch status flip to offline then back.| Passed ||
+| 3 |run annotate on a clip; boxes and ids look right; FPS printed.| Passed||
 
 ## Measured results (only real numbers, with the command that produced them)
 | Metric | Value | Command / script | Date |
