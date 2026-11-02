@@ -33,6 +33,7 @@ from app.recorder.clipper import (
     ClipResult
 )
 from app.tools.rebuild_index import rebuild_index, verify_clip_file
+from app.tools.cut_clip import parse_timestamp_arg
 
 
 # Helper to generate test synthetic video segments using ffmpeg
@@ -489,3 +490,206 @@ def test_recorder_supervisor_and_gaps(tmp_path):
     recorder.gaps.append((12000, 16000))
     assert recorder.has_gap(14000, 18000) is True
     assert recorder.has_gap(20000, 25000) is False
+
+
+# 11. Human Checkpoint Bug Fix Tests
+
+# Bug 1: Segment timestamps & timezone alignment
+def test_checkpoint_bug1_segment_timestamp_utc_vs_local():
+    ts_utc = parse_segment_timestamp("20261101_102720.mkv")
+    dt_utc = datetime(2026, 11, 1, 10, 27, 20, tzinfo=timezone.utc)
+    expected_ms = int(dt_utc.timestamp() * 1000)
+    assert ts_utc == expected_ms
+
+
+# Bug 1 (Timezone): Real recorder-style filenames in Asia/Kolkata timezone, cutting in the middle
+def test_checkpoint_bug1_real_filenames_kolkata_timezone(tmp_path):
+    from app.rules.schedule import resolve_timezone
+    ist_tz = resolve_timezone("Asia/Kolkata")
+
+    cont_dir = tmp_path / "continuous"
+    clips_dir = tmp_path / "clips"
+    cam_id = "cam01"
+    cam_dir = cont_dir / cam_id
+    cam_dir.mkdir(parents=True)
+
+    dt_ist1 = datetime(2026, 11, 1, 15, 57, 20, tzinfo=ist_tz)
+    dt_ist2 = datetime(2026, 11, 1, 15, 57, 30, tzinfo=ist_tz)
+
+    seg1_name = dt_ist1.strftime("%Y%m%d_%H%M%S.mkv")
+    seg2_name = dt_ist2.strftime("%Y%m%d_%H%M%S.mkv")
+
+    create_synthetic_segment(cam_dir / seg1_name, duration_s=10.0)
+    create_synthetic_segment(cam_dir / seg2_name, duration_s=10.0)
+
+    clipper_ist = Clipper(clips_dir=str(clips_dir), continuous_dir=str(cont_dir), segment_tz=ist_tz)
+
+    start_utc_ms = int(datetime(2026, 11, 1, 15, 57, 25, tzinfo=ist_tz).timestamp() * 1000)
+    end_utc_ms = int(datetime(2026, 11, 1, 15, 57, 35, tzinfo=ist_tz).timestamp() * 1000)
+
+    req = ClipRequest(
+        kind="event",
+        camera_id=cam_id,
+        start_ts_ms=start_utc_ms,
+        end_ts_ms=end_utc_ms,
+        pre_roll_s=0,
+        hold_s=0
+    )
+
+    res = clipper_ist.process_clip_request(req, wait_timeout_s=1.0)
+    assert res.status == "ready"
+    assert Path(res.path).exists()
+    assert abs(res.duration_s - 10.0) < 0.2
+    assert len(res.key_frames) == 3
+
+
+# Bug 2: --anchor timestamp parsing formats (negative offset, s ago, epoch ms)
+def test_checkpoint_bug2_parse_timestamp_arg_formats():
+    now_ms = 1700000000000
+    assert parse_timestamp_arg("-30", now_ms) == now_ms - 30000
+    assert parse_timestamp_arg("30s ago", now_ms) == now_ms - 30000
+    assert parse_timestamp_arg("30s", now_ms) == now_ms - 30000
+    assert parse_timestamp_arg("30 ago", now_ms) == now_ms - 30000
+    assert parse_timestamp_arg("1793548680000", now_ms) == 1793548680000
+
+
+# Bug 2: Sighting window math strictly [anchor - 4s, anchor + 6s] (docs/05 s6)
+def test_checkpoint_bug2_anchor_window_math():
+    anchor_ms = 1793548680000
+    w_start, w_end, dur_s = compute_clip_window(
+        kind="sighting",
+        start_ts_ms=anchor_ms,
+        end_ts_ms=anchor_ms,
+        anchor_ts_ms=anchor_ms,
+        sighting_length_s=10.0,
+        sighting_pre_s=4.0
+    )
+    assert w_start == anchor_ms - 4000
+    assert w_end == anchor_ms + 6000
+    assert dur_s == 10.0
+
+
+# Bug 3: A clip whose window has no recorded coverage must NEVER be 'ready'
+def test_checkpoint_bug3_clip_without_full_coverage_not_ready(tmp_path):
+    cont_dir = tmp_path / "continuous"
+    clips_dir = tmp_path / "clips"
+    cam_id = "cam01"
+    cam_dir = cont_dir / cam_id
+    cam_dir.mkdir(parents=True)
+
+    seg_dt = datetime(2026, 11, 1, 12, 0, 0, tzinfo=timezone.utc)
+    seg_ms = int(seg_dt.timestamp() * 1000)
+    seg_path = cam_dir / seg_dt.strftime("%Y%m%d_%H%M%S.mkv")
+    create_synthetic_segment(seg_path, duration_s=10.0)
+
+    clipper = Clipper(clips_dir=str(clips_dir), continuous_dir=str(cont_dir))
+
+    req_no_cov = ClipRequest(
+        kind="event",
+        camera_id=cam_id,
+        start_ts_ms=seg_ms + 30000,
+        end_ts_ms=seg_ms + 40000,
+        pre_roll_s=0,
+        hold_s=0
+    )
+    res_no_cov = clipper.process_clip_request(req_no_cov, wait_timeout_s=0.5)
+    assert res_no_cov.status != "ready"
+    assert res_no_cov.status in ("needs_repair", "incomplete")
+    assert res_no_cov.status_reason != ""
+
+    req_partial = ClipRequest(
+        kind="event",
+        camera_id=cam_id,
+        start_ts_ms=seg_ms + 5000,
+        end_ts_ms=seg_ms + 25000,
+        pre_roll_s=0,
+        hold_s=0
+    )
+    res_partial = clipper.process_clip_request(req_partial, wait_timeout_s=0.5)
+    assert res_partial.status != "ready"
+    assert res_partial.status == "incomplete"
+    assert "Partial coverage" in res_partial.status_reason
+
+
+# Bug 4: Measured duration in sidecar duration_s and clamped window in batch mode
+def test_checkpoint_bug4_measured_duration_in_sidecar(tmp_path):
+    clips_dir = tmp_path / "clips"
+    src_file = tmp_path / "src10s.mkv"
+    create_synthetic_segment(src_file, duration_s=10.0)
+
+    clipper = Clipper(clips_dir=str(clips_dir))
+
+    req = ClipRequest(
+        kind="event",
+        camera_id="cam01",
+        start_ts_ms=0,
+        end_ts_ms=10000,
+        pre_roll_s=15.0,
+        hold_s=20.0
+    )
+
+    res = clipper.process_clip_request(req, source_file=src_file)
+    assert res.status == "ready"
+
+    probe_dur = get_video_duration_ffprobe(Path(res.path))
+    assert abs(res.duration_s - probe_dur) < 0.1
+    assert res.duration_s < 12.0
+
+    with open(res.sidecar_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    assert abs(meta["duration_s"] - probe_dur) < 0.1
+    assert "window_start_ts" in meta
+    assert "window_end_ts" in meta
+    assert meta["status_reason"] != ""
+
+
+# Bug 5: Batch mode must extract all 3 key frames (first, anchor, last)
+def test_checkpoint_bug5_batch_mode_extracts_all_keyframes(tmp_path):
+    clips_dir = tmp_path / "clips"
+    src_file = tmp_path / "src10s.mkv"
+    create_synthetic_segment(src_file, duration_s=10.0)
+
+    clipper = Clipper(clips_dir=str(clips_dir))
+    req = ClipRequest(
+        kind="event",
+        camera_id="cam01",
+        start_ts_ms=0,
+        end_ts_ms=10000,
+        pre_roll_s=15.0,
+        hold_s=20.0
+    )
+
+    res = clipper.process_clip_request(req, source_file=src_file)
+    assert res.status == "ready"
+    assert len(res.key_frames) == 3
+    assert any("first" in k for k in res.key_frames)
+    assert any("anchor" in k for k in res.key_frames)
+    assert any("last" in k for k in res.key_frames)
+
+
+# Bug 6: Recorder reports completed segment size (>0 bytes), not 0 bytes at creation
+def test_checkpoint_bug6_recorder_size_reporting(tmp_path):
+    out_dir = tmp_path / "cam01"
+    out_dir.mkdir(parents=True)
+
+    seg1 = out_dir / "20261101_100000.mkv"
+    create_synthetic_segment(seg1, duration_s=5.0)
+
+    seg2 = out_dir / "20261101_100005.mkv"
+    seg2.touch()  # active file 0 bytes
+
+    reported_completed = set()
+    completed_reports = []
+
+    files = sorted(out_dir.glob("*.mkv"))
+    if len(files) > 1:
+        for f in files[:-1]:
+            if f.name not in reported_completed:
+                reported_completed.add(f.name)
+                size = f.stat().st_size
+                completed_reports.append((f.name, size))
+
+    assert len(completed_reports) == 1
+    assert completed_reports[0][0] == seg1.name
+    assert completed_reports[0][1] > 0
+    assert seg2.name not in reported_completed

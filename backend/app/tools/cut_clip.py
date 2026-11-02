@@ -10,6 +10,7 @@ import sys
 import argparse
 import logging
 from pathlib import Path
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -20,17 +21,32 @@ logger = logging.getLogger(__name__)
 
 
 def parse_timestamp_arg(val: Optional[str], now_ms: int) -> Optional[int]:
-    """Parse integer ms, negative offset (e.g. -30 for 30s ago), or ISO 8601."""
+    """Parse integer ms, relative offset (e.g. -30, 30s ago, now-30s), or ISO 8601."""
     if val is None:
         return None
     val = val.strip()
+
+    # Check for relative offset formats like "30s ago", "30 ago", "30s", "-30", "now-30s"
+    rel_match = re.match(r"^(?:now\s*-\s*|-)?\s*(\d+(?:\.\d+)?)\s*(?:s(?:ec(?:onds?)?)?)?(?:\s*ago)?$", val, re.IGNORECASE)
+    if rel_match and ("ago" in val.lower() or "now" in val.lower() or "s" in val.lower() or val.startswith("-")):
+        sec_offset = float(rel_match.group(1))
+        return now_ms - int(sec_offset * 1000)
+
     try:
-        # Check if direct integer milliseconds
+        # Check if direct integer
         num = int(val)
-        if -86400 <= num <= 0:
-            # Negative or small offset in seconds
+        if -86400 <= num < 0:
+            # Negative seconds offset
             return now_ms + (num * 1000)
-        return num
+        elif 0 <= num < 1_000_000_000:
+            # Small positive integer -> interpret as seconds ago
+            return now_ms - (num * 1000)
+        elif 1_000_000_000 <= num < 100_000_000_000:
+            # Epoch seconds -> epoch ms
+            return num * 1000
+        else:
+            # Epoch milliseconds
+            return num
     except ValueError:
         pass
 
@@ -69,20 +85,39 @@ def main():
     end_ms = parse_timestamp_arg(args.end, now_ms)
     anchor_ms = parse_timestamp_arg(args.anchor, now_ms)
 
-    if start_ms is None and end_ms is None:
-        duration_s = args.duration or (10.0 if args.kind == "sighting" else 25.0)
-        # Default: recent window
-        end_ms = now_ms
-        start_ms = now_ms - int(duration_s * 1000)
-    elif start_ms is not None and end_ms is None:
-        duration_s = args.duration or 10.0
-        end_ms = start_ms + int(duration_s * 1000)
-    elif start_ms is None and end_ms is not None:
-        duration_s = args.duration or 10.0
-        start_ms = end_ms - int(duration_s * 1000)
-
-    if args.kind == "sighting" and anchor_ms is None:
-        anchor_ms = start_ms + int(((end_ms - start_ms) / 2))
+    if args.kind == "sighting":
+        # Sighting clip spec: docs/05_VEHICLES.md section 6:
+        # Window = [anchor - pre_s, anchor + (length_s - pre_s)] (pre_s = 4.0, length_s = 10.0)
+        sighting_len_s = args.duration or 10.0
+        sighting_pre_s = 4.0
+        if anchor_ms is not None:
+            start_ms = anchor_ms - int(sighting_pre_s * 1000)
+            end_ms = start_ms + int(sighting_len_s * 1000)
+        elif start_ms is not None and end_ms is not None:
+            anchor_ms = start_ms + int(sighting_pre_s * 1000)
+        elif start_ms is not None:
+            anchor_ms = start_ms + int(sighting_pre_s * 1000)
+            end_ms = start_ms + int(sighting_len_s * 1000)
+        elif end_ms is not None:
+            start_ms = end_ms - int(sighting_len_s * 1000)
+            anchor_ms = start_ms + int(sighting_pre_s * 1000)
+        else:
+            # Default recent window anchored 6s ago
+            anchor_ms = now_ms - int((sighting_len_s - sighting_pre_s) * 1000)
+            start_ms = anchor_ms - int(sighting_pre_s * 1000)
+            end_ms = start_ms + int(sighting_len_s * 1000)
+    else:
+        # Event clip
+        if start_ms is None and end_ms is None:
+            duration_s = args.duration or 25.0
+            end_ms = now_ms
+            start_ms = now_ms - int(duration_s * 1000)
+        elif start_ms is not None and end_ms is None:
+            duration_s = args.duration or 25.0
+            end_ms = start_ms + int(duration_s * 1000)
+        elif start_ms is None and end_ms is not None:
+            duration_s = args.duration or 25.0
+            start_ms = end_ms - int(duration_s * 1000)
 
     clipper = Clipper(
         clips_dir=args.clips_dir,
@@ -104,15 +139,19 @@ def main():
 
     print(f"\nCutting {args.kind} clip for camera '{args.camera}'...")
     print(f"  Window: {start_ms} -> {end_ms} (duration: {(end_ms - start_ms) / 1000.0:.1f}s)")
+    if anchor_ms is not None:
+        print(f"  Anchor: {anchor_ms}")
     if source_path:
         print(f"  Source file: {source_path}")
 
-    res = clipper.process_clip_request(req, source_file=source_path)
+    res = clipper.process_clip_request(req, source_file=source_path, wait_timeout_s=args.wait)
 
     print("\n" + "=" * 60)
     print("Clip Cutting Result:")
     print(f"  Clip ID:     {res.clip_id}")
     print(f"  Status:      {res.status}")
+    if res.status != "ready":
+        print(f"  Reason:      {res.status_reason}")
     print(f"  MP4 Path:    {res.path}")
     print(f"  Sidecar:     {res.sidecar_path}")
     print(f"  Duration:    {res.duration_s:.2f}s")
@@ -121,11 +160,11 @@ def main():
     print(f"  Key frames:  {res.key_frames}")
     print("=" * 60)
 
-    if res.status in ("ready", "incomplete"):
+    if res.status in ("ready", "incomplete") and res.size_bytes > 0:
         clean_url = Path(res.path).resolve().as_uri()
         print(f"\nPlayback in browser: {clean_url}\n")
     else:
-        print(f"\nWarning: Clip cutting resulted in status '{res.status}'\n")
+        print(f"\nWarning: Clip cutting resulted in status '{res.status}': {res.status_reason}\n")
 
 
 if __name__ == "__main__":

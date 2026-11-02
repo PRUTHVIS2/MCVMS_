@@ -80,12 +80,15 @@ class FFmpegRecorder:
                 )
                 self._last_dead_ts_ms = None
 
+            env = os.environ.copy()
+            env["TZ"] = "UTC"
             try:
-                # Start background subprocess
+                # Start background subprocess with UTC timezone for cross-platform strftime
                 self.process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE
+                    stderr=subprocess.PIPE,
+                    env=env
                 )
                 self.running = True
                 logger.info(f"Started continuous recording for camera {self.camera_id} at {self.base_dir}")
@@ -215,4 +218,65 @@ class RecorderSupervisor:
                 for rec in list(self.recorders.values()):
                     rec.check_health()
             time.sleep(self.check_interval_s)
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Run continuous recorder for a camera")
+    parser.add_argument("--camera", default="cam01", help="Camera ID (default: cam01)")
+    parser.add_argument("--url", default="rtsp://localhost:8554/cam01", help="RTSP URL or video file (default: rtsp://localhost:8554/cam01)")
+    parser.add_argument("--base-dir", default="data/continuous", help="Base directory for continuous segments (default: data/continuous)")
+    parser.add_argument("--segment-time", type=int, default=10, help="Segment length in seconds (default: 10)")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+    out_dir = Path(args.base_dir) / args.camera
+    print(f"\n============================================================")
+    print(f"Starting Continuous Recorder for '{args.camera}'")
+    print(f"  Source:       {args.url}")
+    print(f"  Destination:  {out_dir}")
+    print(f"  Segment Time: {args.segment_time}s")
+    print(f"Press Ctrl+C to stop.")
+    print(f"============================================================\n")
+
+    recorder = FFmpegRecorder(
+        camera_id=args.camera,
+        rtsp_url=args.url,
+        base_dir=args.base_dir,
+        segment_time_s=args.segment_time
+    )
+
+    recorder.start()
+    reported_completed = set()
+
+    try:
+        while True:
+            time.sleep(2.0)
+            recorder.check_health()
+            if out_dir.exists():
+                files = sorted(out_dir.glob("*.mkv"))
+                # Any segment before the latest active file is closed and completed
+                if len(files) > 1:
+                    for f in files[:-1]:
+                        if f.name not in reported_completed:
+                            reported_completed.add(f.name)
+                            size = f.stat().st_size
+                            print(f"  [Segment completed] {f.name} ({size / (1024*1024):.2f} MB / {size} bytes)")
+    except KeyboardInterrupt:
+        print("\nStopping recorder...")
+    finally:
+        recorder.stop()
+        if out_dir.exists():
+            for f in sorted(out_dir.glob("*.mkv")):
+                if f.name not in reported_completed:
+                    reported_completed.add(f.name)
+                    size = f.stat().st_size
+                    print(f"  [Segment completed] {f.name} ({size / (1024*1024):.2f} MB / {size} bytes)")
+        print("Recorder stopped cleanly.\n")
+
+
+if __name__ == "__main__":
+    main()
+
 

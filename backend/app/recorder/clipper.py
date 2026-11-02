@@ -59,6 +59,9 @@ class ClipResult:
     status: str  # 'ready' | 'incomplete' | 'needs_repair' | 'failed'
     key_frames: List[str]
     created_at: int
+    status_reason: str = ""
+    window_start_ts: Optional[int] = None
+    window_end_ts: Optional[int] = None
 
 
 def compute_clip_window(
@@ -97,14 +100,13 @@ def compute_clip_window(
     return window_start, window_end, duration_s
 
 
-def parse_segment_timestamp(filename_or_path: str) -> Optional[int]:
+def parse_segment_timestamp(filename_or_path: str, tz: Optional[Any] = timezone.utc) -> Optional[int]:
     """Parse segment timestamp YYYYMMDD_HHMMSS from filename to epoch ms."""
     name = Path(filename_or_path).stem
-    # Example: 20261005_100000
+    target_tz = tz or timezone.utc
     try:
-        dt = datetime.strptime(name, "%Y%m%d_%H%M%S")
-        # Interpret in UTC for consistency
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(name[:15], "%Y%m%d_%H%M%S")
+        dt = dt.replace(tzinfo=target_tz)
         return int(dt.timestamp() * 1000)
     except Exception:
         return None
@@ -142,11 +144,13 @@ class Clipper:
         self,
         clips_dir: str = "data/clips",
         continuous_dir: str = "data/continuous",
-        clock: Optional[Clock] = None
+        clock: Optional[Clock] = None,
+        segment_tz: Optional[Any] = timezone.utc
     ):
         self.clips_dir = Path(clips_dir)
         self.continuous_dir = Path(continuous_dir)
         self.clock = clock or Clock()
+        self.segment_tz = segment_tz or timezone.utc
 
     def find_covering_segments(
         self,
@@ -175,7 +179,7 @@ class Clipper:
             files = sorted(cam_dir.glob("*.mkv"))
 
             for f in files:
-                seg_start = parse_segment_timestamp(f.name)
+                seg_start = parse_segment_timestamp(f.name, tz=self.segment_tz)
                 if seg_start is None:
                     continue
                 # Estimated or probe segment end
@@ -291,8 +295,8 @@ class Clipper:
                 "-loglevel", "error",
                 "-f", "concat",
                 "-safe", "0",
-                "-ss", f"{offset_s:.3f}",
                 "-i", str(concat_txt),
+                "-ss", f"{offset_s:.3f}",
                 "-t", f"{duration_s:.3f}"
             ] + codec_args + [
                 "-pix_fmt", "yuv420p",
@@ -327,10 +331,17 @@ class Clipper:
     def extract_key_frames(
         self,
         clip_path: Path,
-        duration_s: float
+        duration_s: Optional[float] = None
     ) -> List[str]:
         """Extract first, anchor/middle, and last keyframes as JPEGs."""
-        if not clip_path.exists() or duration_s <= 0:
+        if not clip_path.exists():
+            return []
+
+        # Always probe the actual file duration to guarantee timestamps are valid
+        actual_dur = get_video_duration_ffprobe(clip_path)
+        if actual_dur <= 0:
+            actual_dur = duration_s or 0.0
+        if actual_dur <= 0:
             return []
 
         base_stem = clip_path.stem
@@ -339,8 +350,8 @@ class Clipper:
 
         timestamps = [
             ("first", 0.0),
-            ("anchor", duration_s / 2.0),
-            ("last", max(0.0, duration_s - 0.1))
+            ("anchor", round(actual_dur / 2.0, 3)),
+            ("last", max(0.0, round(actual_dur - 0.1, 3)))
         ]
 
         for label, t in timestamps:
@@ -369,7 +380,8 @@ class Clipper:
         has_gap_fn: Optional[Any] = None,
         source_file: Optional[Path] = None,
         source_start_ms: Optional[int] = None,
-        db_conn: Optional[Any] = None
+        db_conn: Optional[Any] = None,
+        wait_timeout_s: float = 15.0
     ) -> ClipResult:
         """Execute full clip cutting workflow."""
         clip_id = req.clip_id or str(ulid.ULID())
@@ -398,26 +410,68 @@ class Clipper:
         has_gap = has_gap_fn(win_start, win_end) if has_gap_fn else False
 
         cut_success = False
+        status_reason = ""
+        status = "pending"
+
         if source_file is not None and source_file.exists():
             # Batch mode: cut directly from file
+            source_dur = get_video_duration_ffprobe(source_file)
             base_t = source_start_ms or req.start_ts_ms
             offset_s = max(0.0, (win_start - base_t) / 1000.0)
+            if source_dur > 0:
+                offset_s = min(offset_s, source_dur)
+                # Clamp nominal duration to remaining source length
+                duration_s = max(0.0, min(duration_s, source_dur - offset_s))
             cut_success = self.cut_clip_from_file(source_file, final_mp4, offset_s, duration_s)
+            status = "ready" if cut_success else "needs_repair"
+            status_reason = "Full coverage (batch file)" if cut_success else "Batch cut failed"
         else:
             # Live mode: cut from continuous segments
-            segments = self.find_covering_segments(req.camera_id, win_start, win_end)
-            cut_success = self.cut_clip_from_segments(segments, final_mp4, win_start, duration_s)
+            segments = self.find_covering_segments(req.camera_id, win_start, win_end, wait_timeout_s=wait_timeout_s)
+            if not segments:
+                cut_success = False
+                status = "needs_repair"
+                status_reason = f"No covering segments found for {req.camera_id} in window [{win_start}, {win_end}]"
+                logger.warning(f"Clip {clip_id}: {status_reason}")
+            else:
+                segments.sort(key=lambda x: x[1])
+                first_seg_start = segments[0][1]
+                latest_seg_end = max(s_end for _, _, s_end in segments)
+                has_segment_gap = any(segments[i + 1][1] > segments[i][2] for i in range(len(segments) - 1))
+
+                if latest_seg_end <= win_start or first_seg_start >= win_end:
+                    cut_success = False
+                    status = "needs_repair"
+                    status_reason = f"Segments span [{first_seg_start}, {latest_seg_end}], which does not overlap requested window [{win_start}, {win_end}]"
+                    logger.warning(f"Clip {clip_id}: {status_reason}")
+                else:
+                    is_partial = (first_seg_start > win_start or latest_seg_end < win_end or has_segment_gap or has_gap)
+                    cut_success = self.cut_clip_from_segments(segments, final_mp4, win_start, duration_s)
+                    if not cut_success:
+                        status = "needs_repair"
+                        status_reason = "FFmpeg cut failed from segments"
+                        logger.error(f"Clip {clip_id}: {status_reason}")
+                    elif is_partial:
+                        status = "incomplete"
+                        status_reason = f"Partial coverage: segments span [{first_seg_start}, {latest_seg_end}], requested window [{win_start}, {win_end}]"
+                        logger.warning(f"Clip {clip_id}: {status_reason}")
+                    else:
+                        status = "ready"
+                        status_reason = "Full coverage"
 
         if not cut_success:
-            status = "needs_repair"
+            if status != "incomplete":
+                status = "needs_repair"
             sha256 = ""
             size_bytes = 0
+            measured_dur_s = 0.0
             key_frames = []
         else:
-            status = "incomplete" if has_gap else "ready"
+            probe_dur = get_video_duration_ffprobe(final_mp4)
+            measured_dur_s = probe_dur if probe_dur > 0 else duration_s
             sha256 = compute_sha256(final_mp4)
             size_bytes = final_mp4.stat().st_size
-            key_frames = self.extract_key_frames(final_mp4, duration_s)
+            key_frames = self.extract_key_frames(final_mp4, measured_dur_s)
 
         # Write sidecar JSON
         sidecar_data = {
@@ -428,10 +482,13 @@ class Clipper:
             "sidecar_path": str(sidecar_json),
             "start_ts": win_start,
             "end_ts": win_end,
-            "duration_s": duration_s,
+            "window_start_ts": win_start,
+            "window_end_ts": win_end,
+            "duration_s": measured_dur_s,
             "size_bytes": size_bytes,
             "sha256": sha256,
             "status": status,
+            "status_reason": status_reason,
             "key_frames": key_frames,
             "retention_class": req.retention_class,
             "created_at": now_ms,
@@ -461,7 +518,7 @@ class Clipper:
                     """,
                     (
                         clip_id, req.kind, req.camera_id, str(final_mp4), str(sidecar_json),
-                        win_start, win_end, duration_s, size_bytes, sha256, status,
+                        win_start, win_end, measured_dur_s, size_bytes, sha256, status,
                         req.retention_class, now_ms
                     )
                 )
@@ -477,11 +534,141 @@ class Clipper:
             sidecar_path=str(sidecar_json),
             start_ts=win_start,
             end_ts=win_end,
-            duration_s=duration_s,
+            duration_s=measured_dur_s,
             size_bytes=size_bytes,
             sha256=sha256,
             status=status,
             key_frames=key_frames,
-            created_at=now_ms
+            created_at=now_ms,
+            status_reason=status_reason,
+            window_start_ts=win_start,
+            window_end_ts=win_end
         )
+
+    def repair_clip(
+        self,
+        clip_id: str,
+        db_conn: Optional[Any] = None,
+        has_gap_fn: Optional[Any] = None
+    ) -> Optional[ClipResult]:
+        """Re-attempt cutting a clip that was marked 'needs_repair'."""
+        clip_row = None
+        if db_conn is not None:
+            cursor = db_conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,))
+            clip_row = cursor.fetchone()
+            if not clip_row:
+                logger.warning(f"Clip {clip_id} not found in database for repair")
+                return None
+            if clip_row["status"] not in ("needs_repair", "failed"):
+                logger.info(f"Clip {clip_id} does not need repair (status={clip_row['status']})")
+                return None
+
+        # Look for sidecar JSON to get context
+        sidecar_path = None
+        if clip_row and clip_row["sidecar_path"]:
+            sidecar_path = Path(clip_row["sidecar_path"])
+        else:
+            matches = list(self.clips_dir.glob(f"**/{clip_id}.meta.json"))
+            if matches:
+                sidecar_path = matches[0]
+
+        if not sidecar_path or not sidecar_path.exists():
+            logger.error(f"Cannot repair clip {clip_id}: sidecar {sidecar_path} not found")
+            return None
+
+        with open(sidecar_path, "r", encoding="utf-8") as f:
+            sidecar_data = json.load(f)
+
+        camera_id = sidecar_data["camera_id"]
+        start_ts = sidecar_data["start_ts"]
+        end_ts = sidecar_data["end_ts"]
+        duration_s = sidecar_data["duration_s"]
+        kind = sidecar_data.get("kind", "event")
+        final_mp4 = Path(sidecar_data["path"])
+
+        # Try to find covering segments now
+        segments = self.find_covering_segments(camera_id, start_ts, end_ts, wait_timeout_s=2.0)
+        if not segments:
+            logger.info(f"Still no covering segments for clip {clip_id}")
+            return None
+
+        segments.sort(key=lambda x: x[1])
+        first_seg_start = segments[0][1]
+        latest_seg_end = max(s_end for _, _, s_end in segments)
+        has_segment_gap = any(segments[i + 1][1] > segments[i][2] for i in range(len(segments) - 1))
+
+        if latest_seg_end <= start_ts or first_seg_start >= end_ts:
+            logger.info(f"Segments do not overlap clip {clip_id} window")
+            return None
+
+        is_partial = (first_seg_start > start_ts or latest_seg_end < end_ts or has_segment_gap or (has_gap_fn(start_ts, end_ts) if has_gap_fn else False))
+        cut_success = self.cut_clip_from_segments(segments, final_mp4, start_ts, duration_s)
+        if not cut_success:
+            logger.warning(f"Repair cut failed for clip {clip_id}")
+            return None
+
+        status = "incomplete" if is_partial else "ready"
+        status_reason = f"Partial coverage: segments span [{first_seg_start}, {latest_seg_end}]" if is_partial else "Full coverage"
+        probe_dur = get_video_duration_ffprobe(final_mp4)
+        measured_dur_s = probe_dur if probe_dur > 0 else duration_s
+        sha256 = compute_sha256(final_mp4)
+        size_bytes = final_mp4.stat().st_size
+        key_frames = self.extract_key_frames(final_mp4, measured_dur_s)
+
+        # Update sidecar
+        sidecar_data["status"] = status
+        sidecar_data["status_reason"] = status_reason
+        sidecar_data["duration_s"] = measured_dur_s
+        sidecar_data["sha256"] = sha256
+        sidecar_data["size_bytes"] = size_bytes
+        sidecar_data["key_frames"] = key_frames
+        with open(sidecar_path, "w", encoding="utf-8") as f:
+            json.dump(sidecar_data, f, indent=2)
+
+        # Update DB
+        if db_conn is not None:
+            db_conn.execute(
+                """
+                UPDATE clips
+                SET status = ?, sha256 = ?, size_bytes = ?, duration_s = ?
+                WHERE id = ?
+                """,
+                (status, sha256, size_bytes, measured_dur_s, clip_id)
+            )
+            db_conn.commit()
+
+        return ClipResult(
+            clip_id=clip_id,
+            kind=kind,
+            camera_id=camera_id,
+            path=str(final_mp4),
+            sidecar_path=str(sidecar_path),
+            start_ts=start_ts,
+            end_ts=end_ts,
+            window_start_ts=start_ts,
+            window_end_ts=end_ts,
+            duration_s=measured_dur_s,
+            size_bytes=size_bytes,
+            sha256=sha256,
+            status=status,
+            status_reason=status_reason,
+            key_frames=key_frames,
+            created_at=sidecar_data.get("created_at", self.clock.now_ms())
+        )
+
+    def repair_all_pending(
+        self,
+        db_conn: Any,
+        has_gap_fn: Optional[Any] = None
+    ) -> List[ClipResult]:
+        """Find all clips with status 'needs_repair' and attempt to repair them."""
+        cursor = db_conn.execute("SELECT id FROM clips WHERE status = 'needs_repair'")
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            res = self.repair_clip(row["id"], db_conn=db_conn, has_gap_fn=has_gap_fn)
+            if res:
+                results.append(res)
+        return results
+
 

@@ -23,3 +23,4 @@ Format: `YYYY-MM-DD | decision | reason | alternative considered | who`.
 
 ## Log
 - 2026-11-01 | Timezone resolution fallback in schedule evaluator | Windows standard library does not ship IANA tzdata, which causes zoneinfo.ZoneInfo("Asia/Kolkata") to fail without the optional tzdata package | Require external system configuration | agent
+- 2026-11-02 | Continuous segment filename UTC timestamp convention | AGENT_RULES section 8 mandates UTC integer epoch ms throughout backend. FFmpeg subprocess sets TZ=UTC so strftime generates YYYYMMDD_HHMMSS in UTC cross-platform. Clipper parse_segment_timestamp parses UTC by default (with optional segment_tz override). Old local-named files will be interpreted as UTC (5.5h offset for IST), so queries for current timestamps will not match them; users re-record segments cleanly | Local timezone filenames with per-camera timezone parsing | agent
