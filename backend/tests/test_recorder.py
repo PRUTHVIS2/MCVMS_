@@ -693,3 +693,125 @@ def test_checkpoint_bug6_recorder_size_reporting(tmp_path):
     assert completed_reports[0][0] == seg1.name
     assert completed_reports[0][1] > 0
     assert seg2.name not in reported_completed
+
+
+# Round 2 Checkpoint Tests:
+# 1. Live sighting cut spanning segment boundary must have status == 'ready' (not 'incomplete')
+def test_checkpoint_round2_boundary_sighting_cut_ready(tmp_path):
+    cont_dir = tmp_path / "continuous"
+    clips_dir = tmp_path / "clips"
+    cam_id = "cam01"
+    cam_dir = cont_dir / cam_id
+    cam_dir.mkdir(parents=True)
+
+    # Segment 1: starts at 1793578670000 (10:00:00 UTC), duration 11.0s, ends at 1793578681000
+    seg1_dt = datetime.fromtimestamp(1793578670, tz=timezone.utc)
+    seg1_name = seg1_dt.strftime("%Y%m%d_%H%M%S.mkv")
+    create_synthetic_segment(cam_dir / seg1_name, duration_s=11.0)
+
+    # Segment 2: starts at 1793578681000 (10:00:11 UTC), duration 10.0s, ends at 1793578691000
+    seg2_dt = datetime.fromtimestamp(1793578681, tz=timezone.utc)
+    seg2_name = seg2_dt.strftime("%Y%m%d_%H%M%S.mkv")
+    create_synthetic_segment(cam_dir / seg2_name, duration_s=10.0)
+
+    clipper = Clipper(clips_dir=str(clips_dir), continuous_dir=str(cont_dir))
+
+    # Request sighting clip with anchor 1793578680000 -> window 1793578676000..1793578686000
+    # Window spans boundary between seg1 and seg2, completely inside [1793578670000, 1793578691000]
+    req = ClipRequest(
+        kind="sighting",
+        camera_id=cam_id,
+        start_ts_ms=1793578676000,
+        end_ts_ms=1793578686000,
+        anchor_ts_ms=1793578680000,
+        sighting_length_s=10.0,
+        sighting_pre_s=4.0
+    )
+
+    res = clipper.process_clip_request(req, wait_timeout_s=1.0)
+    assert res.status == "ready"
+    assert res.status_reason == "Full coverage"
+    assert abs(res.duration_s - 10.0) < 0.2
+
+
+# 2. Sighting clips must have retention_class: 'sighting_resolved' (per docs/07 section 5), not 'event_medium'
+def test_checkpoint_round2_sighting_retention_class(tmp_path):
+    clips_dir = tmp_path / "clips"
+    src_file = tmp_path / "src10s.mkv"
+    create_synthetic_segment(src_file, duration_s=10.0)
+
+    clipper = Clipper(clips_dir=str(clips_dir))
+    req = ClipRequest(
+        kind="sighting",
+        camera_id="cam01",
+        start_ts_ms=0,
+        end_ts_ms=10000,
+        anchor_ts_ms=4000
+    )
+
+    res = clipper.process_clip_request(req, source_file=src_file)
+    assert res.status == "ready"
+
+    with open(res.sidecar_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    assert meta["retention_class"] == "sighting_resolved"
+    assert meta["retention_class"] != "event_medium"
+
+
+# 3. Batch mode sidecar window_start_ts and window_end_ts must be clamped to source duration
+def test_checkpoint_round2_batch_window_clamping(tmp_path):
+    clips_dir = tmp_path / "clips"
+    src_file = tmp_path / "src10s.mkv"
+    create_synthetic_segment(src_file, duration_s=10.0)
+
+    clipper = Clipper(clips_dir=str(clips_dir))
+    # Event request with pre_roll 15s and hold 20s on a 10s source file
+    req = ClipRequest(
+        kind="event",
+        camera_id="cam01",
+        start_ts_ms=0,
+        end_ts_ms=10000,
+        pre_roll_s=15.0,
+        hold_s=20.0
+    )
+
+    res = clipper.process_clip_request(req, source_file=src_file)
+    assert res.status == "ready"
+
+    with open(res.sidecar_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    # Window must be clamped to the 10s source file bounds, NOT -15000..30000 (45s span)
+    assert meta["window_start_ts"] >= 0
+    assert meta["window_end_ts"] <= 10000
+    assert (meta["window_end_ts"] - meta["window_start_ts"]) <= 10000
+
+
+# 4. Clipper ignores zero-byte and still-being-written segments
+def test_checkpoint_round2_ignore_zero_byte_segments(tmp_path):
+    cont_dir = tmp_path / "continuous"
+    cam_id = "cam01"
+    cam_dir = cont_dir / cam_id
+    cam_dir.mkdir(parents=True)
+
+    # Valid segment 1: 10s video
+    t0 = 1793578670000
+    seg1_dt = datetime.fromtimestamp(1793578670, tz=timezone.utc)
+    seg1_name = seg1_dt.strftime("%Y%m%d_%H%M%S.mkv")
+    create_synthetic_segment(cam_dir / seg1_name, duration_s=10.0)
+
+    # Zero-byte segment 2 (currently being created / 0 bytes)
+    seg2_dt = datetime.fromtimestamp(1793578680, tz=timezone.utc)
+    seg2_name = seg2_dt.strftime("%Y%m%d_%H%M%S.mkv")
+    zero_file = cam_dir / seg2_name
+    zero_file.touch()
+    assert zero_file.stat().st_size == 0
+
+    clipper = Clipper(continuous_dir=str(cont_dir))
+
+    # find_covering_segments for a window needing segment 2 must NOT return the 0-byte file
+    found = clipper.find_covering_segments(cam_id, t0 + 5000, t0 + 15000, wait_timeout_s=0.2)
+    found_paths = [str(p.name) for p, _, _ in found]
+    assert seg2_name not in found_paths
+

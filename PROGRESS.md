@@ -53,7 +53,7 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 | 2 |start MediaMTX, `fake_camera` for cam01, add the camera, see snapshot, kill the stream and watch status flip to offline then back.| Passed ||
 | 3 |run annotate on a clip; boxes and ids look right; FPS printed.| Passed|Processed 408 frames at 73.4 FPS.|
 | 4 | run `run_rules` on synthetic clips and `test_data/events/*` clips; read PASS/FAIL table; report mismatches. | Passed | car_dwell: diff 1.28s; car_exit: diff 0.11s; car_exit_negative: 0 events (PASS). Zero mismatches. |
-| 5 | 2 min live record; event cut 25.000 s, sighting cut 10.000 s (ffprobe); IST times and anchor verified; both play in browser | Passed | Known limitation:- sighting status wrongly incomplete when window crosses a segment boundary |
+| 5 | 2 min live record; event cut 25.000 s, sighting cut 10.000 s (ffprobe); IST times and anchor verified; both play in browser | Passed | Round 2 fixes: boundary gap false alarm resolved, sighting retention class corrected, batch window clamped, 0-byte segment filtering |
 
 ## Measured results (only real numbers, with the command that produced them)
 | Metric | Value | Command / script | Date |
@@ -259,39 +259,43 @@ tests/test_recorder.py::test_checkpoint_bug2_parse_timestamp_arg_formats PASSED 
 tests/test_recorder.py::test_checkpoint_bug2_anchor_window_math PASSED   [ 56%]
 tests/test_recorder.py::test_checkpoint_bug3_clip_without_full_coverage_not_ready PASSED [ 57%]
 tests/test_recorder.py::test_checkpoint_bug4_measured_duration_in_sidecar PASSED [ 58%]
-tests/test_recorder.py::test_checkpoint_bug5_batch_mode_extracts_all_keyframes PASSED [ 60%]
-tests/test_recorder.py::test_checkpoint_bug6_recorder_size_reporting PASSED [ 61%]
-tests/test_rules_pure.py::test_unknown_never_matches_any_condition PASSED [ 62%]
-tests/test_rules_pure.py::test_condition_operators_known_state PASSED    [ 64%]
-tests/test_rules_pure.py::test_attribute_store_operations PASSED         [ 65%]
-tests/test_rules_pure.py::test_schedule_day_of_week_and_time_window PASSED [ 66%]
-tests/test_rules_pure.py::test_schedule_across_midnight PASSED           [ 68%]
-tests/test_rules_pure.py::test_valid_calendar_dates_and_exemptions PASSED [ 69%]
-tests/test_rules_pure.py::test_escalation_pick_severity PASSED           [ 70%]
-tests/test_rules_pure.py::test_normal_zone_rejects_actions PASSED        [ 72%]
-tests/test_rules_pure.py::test_template_shape_mismatch PASSED            [ 73%]
-tests/test_rules_pure.py::test_presence_rule_with_flicker_n_of_m PASSED  [ 74%]
-tests/test_rules_pure.py::test_cooldown_suppression PASSED               [ 76%]
-tests/test_rules_pure.py::test_late_binding_attribute PASSED             [ 77%]
-tests/test_rules_pure.py::test_dwell_reset PASSED                        [ 78%]
-tests/test_rules_pure.py::test_count_threshold_template PASSED           [ 80%]
-tests/test_rules_pure.py::test_engine_determinism PASSED                 [ 81%]
-tests/test_rules_pure.py::test_grep_no_clocks_in_pure_packages PASSED    [ 82%]
+tests/test_recorder.py::test_checkpoint_bug5_batch_mode_extracts_all_keyframes PASSED [ 56%]
+tests/test_recorder.py::test_checkpoint_bug6_recorder_size_reporting PASSED [ 58%]
+tests/test_recorder.py::test_checkpoint_round2_boundary_sighting_cut_ready PASSED [ 59%]
+tests/test_recorder.py::test_checkpoint_round2_sighting_retention_class PASSED [ 60%]
+tests/test_recorder.py::test_checkpoint_round2_batch_window_clamping PASSED [ 62%]
+tests/test_recorder.py::test_checkpoint_round2_ignore_zero_byte_segments PASSED [ 63%]
+tests/test_rules_pure.py::test_unknown_never_matches_any_condition PASSED [ 64%]
+tests/test_rules_pure.py::test_condition_operators_known_state PASSED    [ 65%]
+tests/test_rules_pure.py::test_attribute_store_operations PASSED         [ 67%]
+tests/test_rules_pure.py::test_schedule_day_of_week_and_time_window PASSED [ 68%]
+tests/test_rules_pure.py::test_schedule_across_midnight PASSED           [ 69%]
+tests/test_rules_pure.py::test_valid_calendar_dates_and_exemptions PASSED [ 70%]
+tests/test_rules_pure.py::test_escalation_pick_severity PASSED           [ 72%]
+tests/test_rules_pure.py::test_normal_zone_rejects_actions PASSED        [ 73%]
+tests/test_rules_pure.py::test_template_shape_mismatch PASSED            [ 74%]
+tests/test_rules_pure.py::test_presence_rule_with_flicker_n_of_m PASSED  [ 75%]
+tests/test_rules_pure.py::test_cooldown_suppression PASSED               [ 77%]
+tests/test_rules_pure.py::test_late_binding_attribute PASSED             [ 78%]
+tests/test_rules_pure.py::test_dwell_reset PASSED                        [ 79%]
+tests/test_rules_pure.py::test_count_threshold_template PASSED           [ 81%]
+tests/test_rules_pure.py::test_engine_determinism PASSED                 [ 82%]
+tests/test_rules_pure.py::test_grep_no_clocks_in_pure_packages PASSED    [ 83%]
 tests/test_run_rules_synthetic.py::test_synthetic_heavy_truck_in_zone PASSED [ 84%]
-tests/test_run_rules_synthetic.py::test_synthetic_flicker_presence PASSED [ 85%]
-tests/test_run_rules_synthetic.py::test_synthetic_line_crossing PASSED   [ 86%]
+tests/test_run_rules_synthetic.py::test_synthetic_flicker_presence PASSED [ 86%]
+tests/test_run_rules_synthetic.py::test_synthetic_line_crossing PASSED   [ 87%]
 tests/test_run_rules_synthetic.py::test_synthetic_dwell PASSED           [ 88%]
 tests/test_run_rules_synthetic.py::test_synthetic_count_threshold PASSED [ 89%]
-tests/test_run_rules_synthetic.py::test_synthetic_schedule_boundary PASSED [ 90%]
+tests/test_run_rules_synthetic.py::test_synthetic_schedule_boundary PASSED [ 91%]
 tests/test_sources.py::test_file_timesource PASSED                       [ 92%]
 tests/test_sources.py::test_file_source_timestamps PASSED                [ 93%]
-tests/test_rtsp_frozen_stream_and_reconnect PASSED      [ 94%]
+tests/test_sources.py::test_rtsp_frozen_stream_and_reconnect PASSED      [ 94%]
 tests/test_vision.py::test_crop_full_res PASSED                          [ 96%]
 tests/test_vision.py::test_scripted_detector_analyzer PASSED             [ 97%]
 tests/test_vision.py::test_class_map_filters PASSED                      [ 98%]
 tests/test_vision.py::test_analyzer_slow_consumer PASSED                 [100%]
 
-======================= 75 passed, 2 warnings in 39.35s =======================
+======================= 79 passed, 2 warnings in 20.90s =======================
   ```
 - **4. Exact commands to run all tests:**
   ```powershell
@@ -301,8 +305,13 @@ tests/test_vision.py::test_analyzer_slow_consumer PASSED                 [100%]
   npx vitest run
   ```
 - **5. Decisions, deviations, limitations:**
-  - **Decisions (logged in `docs/DECISIONS.md`)**: Continuous segment filenames are strictly formatted in UTC (`YYYYMMDD_HHMMSS.mkv` in UTC) via `TZ=UTC` environment injection. Clipper parses UTC by default (with optional `segment_tz` configuration). Old local-named files will have an offset and won't match queries for current UTC timestamps; clean re-recording recommended.
-  - **Skipped tests**: Zero tests skipped (75 passed in backend, 1 passed in frontend).
+  - **Decisions (logged in `docs/DECISIONS.md`)**:
+    - Continuous segment filenames are strictly formatted in UTC (`YYYYMMDD_HHMMSS.mkv` in UTC) via `TZ=UTC` environment injection. Clipper parses UTC by default (with optional `segment_tz` configuration).
+    - Sighting clips default to `sighting_resolved` per docs/07 section 5 (or metadata status: `sighting_needs_review`, `sighting_unregistered`, `sighting_verify`, `sighting_confirmed`) instead of `event_medium`.
+    - Segment boundary coverage tolerance: camera keyframe/GOP interval (1-2s) and second-resolution filename timestamps introduce minor variance between segment start and end timestamps; clipper uses probed duration and a 2.5s GOP tolerance to prevent false `has_segment_gap` alarms across continuous segment boundaries.
+    - Clipper filters out 0-byte segment files and waits for active segments to finish before cutting.
+    - In batch mode, sidecar `window_start_ts` and `window_end_ts` clamp to source file length `[base_t, base_t + source_dur_ms]`.
+  - **Skipped tests**: Zero tests skipped (79 passed in backend, 1 passed in frontend).
 - **6. The human checkpoint (copy from PLAN.md):**
   > run `python -m app.tools.fake_camera` looping a clip, start recorder, request an event clip and a sighting clip via `python -m app.tools.cut_clip`, verify playback in browser.
 

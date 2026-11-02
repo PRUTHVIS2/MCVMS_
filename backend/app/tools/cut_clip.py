@@ -73,6 +73,7 @@ def main():
     parser.add_argument("--pre-roll", type=float, default=15.0, help="Pre-roll in seconds (default: 15.0)")
     parser.add_argument("--hold", type=float, default=20.0, help="Hold in seconds (default: 20.0)")
     parser.add_argument("--wait", type=float, default=15.0, help="Segment wait timeout in seconds (default: 15.0)")
+    parser.add_argument("--retention-class", help="Retention class override (e.g. sighting_resolved, event_critical)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -132,7 +133,8 @@ def main():
         end_ts_ms=end_ms,
         anchor_ts_ms=anchor_ms,
         pre_roll_s=args.pre_roll,
-        hold_s=args.hold
+        hold_s=args.hold,
+        retention_class=args.retention_class
     )
 
     source_path = Path(args.source_file) if args.source_file else None

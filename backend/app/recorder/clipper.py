@@ -38,7 +38,7 @@ class ClipRequest:
     max_clip_min: float = 15.0
     sighting_length_s: float = 10.0
     sighting_pre_s: float = 4.0
-    retention_class: str = "event_medium"
+    retention_class: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     clip_id: Optional[str] = None
 
@@ -164,6 +164,7 @@ class Clipper:
         
         Returns list of (segment_path, seg_start_ms, seg_end_ms).
         Waits up to wait_timeout_s for newly written segments to appear.
+        Filters out 0-byte and still-being-written segments.
         """
         cam_dir = self.continuous_dir / camera_id
         deadline = time.time() + wait_timeout_s
@@ -176,14 +177,29 @@ class Clipper:
                 continue
 
             available_segments: List[Tuple[Path, int, int]] = []
-            files = sorted(cam_dir.glob("*.mkv"))
+            # Ignore zero-byte files (actively being created by FFmpeg)
+            files = [f for f in sorted(cam_dir.glob("*.mkv")) if f.stat().st_size > 0]
 
-            for f in files:
+            for i, f in enumerate(files):
                 seg_start = parse_segment_timestamp(f.name, tz=self.segment_tz)
                 if seg_start is None:
                     continue
-                # Estimated or probe segment end
-                seg_end = seg_start + int(segment_duration_s * 1000)
+
+                # Check if there is a next file to establish exact segment boundary
+                if i + 1 < len(files):
+                    next_start = parse_segment_timestamp(files[i + 1].name, tz=self.segment_tz)
+                    if next_start is not None and next_start > seg_start and (next_start - seg_start) <= int((segment_duration_s + 5.0) * 1000):
+                        seg_end = next_start
+                    else:
+                        seg_end = seg_start + int(segment_duration_s * 1000)
+                else:
+                    # Last completed file: use probed duration if possible
+                    dur = get_video_duration_ffprobe(f)
+                    if dur > 0:
+                        seg_end = seg_start + int(dur * 1000)
+                    else:
+                        seg_end = seg_start + int(segment_duration_s * 1000)
+
                 available_segments.append((f, seg_start, seg_end))
 
             # Filter overlapping segments
@@ -413,10 +429,42 @@ class Clipper:
         status_reason = ""
         status = "pending"
 
+        # Determine effective retention class per docs/07 section 5
+        if req.retention_class is not None:
+            eff_retention_class = req.retention_class
+        elif req.kind == "sighting":
+            status_meta = req.metadata.get("status")
+            ret_override = req.metadata.get("retention_class")
+            if ret_override:
+                eff_retention_class = ret_override
+            elif status_meta == "needs_review":
+                eff_retention_class = "sighting_needs_review"
+            elif status_meta == "unregistered":
+                eff_retention_class = "sighting_unregistered"
+            elif status_meta == "verify":
+                eff_retention_class = "sighting_verify"
+            elif status_meta == "confirmed":
+                eff_retention_class = "sighting_confirmed"
+            else:
+                eff_retention_class = "sighting_resolved"
+        else:
+            severity = req.metadata.get("severity")
+            if severity in ("low", "medium", "critical"):
+                eff_retention_class = f"event_{severity}"
+            else:
+                eff_retention_class = "event_medium"
+
         if source_file is not None and source_file.exists():
             # Batch mode: cut directly from file
             source_dur = get_video_duration_ffprobe(source_file)
             base_t = source_start_ms or req.start_ts_ms
+            source_dur_ms = int(source_dur * 1000) if source_dur > 0 else 0
+
+            # Clamp sidecar window to source file range [base_t, base_t + source_dur_ms]
+            if source_dur_ms > 0:
+                win_start = max(base_t, min(win_start, base_t + source_dur_ms))
+                win_end = max(win_start, min(win_end, base_t + source_dur_ms))
+
             offset_s = max(0.0, (win_start - base_t) / 1000.0)
             if source_dur > 0:
                 offset_s = min(offset_s, source_dur)
@@ -435,9 +483,26 @@ class Clipper:
                 logger.warning(f"Clip {clip_id}: {status_reason}")
             else:
                 segments.sort(key=lambda x: x[1])
+                # Refine segment ends using probed duration where available
+                refined_segments = []
+                for p, s_start, s_end in segments:
+                    dur = get_video_duration_ffprobe(p)
+                    if dur > 0:
+                        actual_end = s_start + int(dur * 1000)
+                    else:
+                        actual_end = s_end
+                    refined_segments.append((p, s_start, max(s_end, actual_end)))
+                segments = refined_segments
+
                 first_seg_start = segments[0][1]
                 latest_seg_end = max(s_end for _, _, s_end in segments)
-                has_segment_gap = any(segments[i + 1][1] > segments[i][2] for i in range(len(segments) - 1))
+
+                # Gap tolerance allows 2.5s for camera keyframe / GOP interval and timestamp quantization
+                gap_tolerance_ms = 2500
+                has_segment_gap = any(
+                    (segments[i + 1][1] - segments[i][2]) > gap_tolerance_ms
+                    for i in range(len(segments) - 1)
+                )
 
                 if latest_seg_end <= win_start or first_seg_start >= win_end:
                     cut_success = False
@@ -453,7 +518,12 @@ class Clipper:
                         logger.error(f"Clip {clip_id}: {status_reason}")
                     elif is_partial:
                         status = "incomplete"
-                        status_reason = f"Partial coverage: segments span [{first_seg_start}, {latest_seg_end}], requested window [{win_start}, {win_end}]"
+                        if has_segment_gap:
+                            status_reason = f"Partial coverage (gap between segments): requested window [{win_start}, {win_end}]"
+                        elif has_gap:
+                            status_reason = f"Partial coverage (recorder gap recorded): requested window [{win_start}, {win_end}]"
+                        else:
+                            status_reason = f"Partial coverage: segments span [{first_seg_start}, {latest_seg_end}], requested window [{win_start}, {win_end}]"
                         logger.warning(f"Clip {clip_id}: {status_reason}")
                     else:
                         status = "ready"
@@ -490,7 +560,7 @@ class Clipper:
             "status": status,
             "status_reason": status_reason,
             "key_frames": key_frames,
-            "retention_class": req.retention_class,
+            "retention_class": eff_retention_class,
             "created_at": now_ms,
             "metadata": req.metadata
         }
@@ -519,7 +589,7 @@ class Clipper:
                     (
                         clip_id, req.kind, req.camera_id, str(final_mp4), str(sidecar_json),
                         win_start, win_end, measured_dur_s, size_bytes, sha256, status,
-                        req.retention_class, now_ms
+                        eff_retention_class, now_ms
                     )
                 )
                 db_conn.commit()
