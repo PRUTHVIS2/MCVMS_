@@ -11,9 +11,11 @@ import sqlite3
 import threading
 from pathlib import Path
 
+from app.api.ws import manager as ws_manager
 from app.attributes.store import AttributeStore
 from app.core.clock import Clock
 from app.core.db import get_connection
+from app.core.geometry import point_in_polygon
 from app.core.types import TrackedFrame
 from app.pipeline.analyzer import Analyzer
 from app.recorder.clipper import Clipper
@@ -140,6 +142,7 @@ class CameraRuntime:
         self.engine = RuleEngine(rules=self.rules, zones=self.zones, cfg=self.rules_config)
 
         self.last_frame_ts: int = 0
+        self.last_track_broadcast_ms: int = 0
         self.processed_frames: int = 0
         self.is_running: bool = False
 
@@ -198,6 +201,45 @@ class CameraRuntime:
                 )
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Error handling decision for camera {self.camera_id}: {e}")
+
+        # Broadcast live tracks for UI overlay canvas (max 10 Hz)
+        if (now_ms - self.last_track_broadcast_ms) >= 100:
+            self.last_track_broadcast_ms = now_ms
+            w, h = frame.frame_size
+            tracks_payload = []
+            for obj in frame.objects:
+                obj_attrs = attrs.get(obj.track_id)
+                attr_dict = {}
+                if obj_attrs:
+                    for k, v in obj_attrs.attrs.items():
+                        attr_dict[k] = {"value": v.value, "conf": v.conf, "state": v.state}
+
+                in_zones = []
+                for zid, cz in self.zones.items():
+                    if cz.shape == "polygon":
+                        zone_pts = [(p[0] * w, p[1] * h) for p in cz.points]
+                        if point_in_polygon(obj.foot_point, zone_pts):
+                            in_zones.append(zid)
+
+                tracks_payload.append({
+                    "id": obj.track_id,
+                    "class": obj.cls,
+                    "conf": round(float(obj.conf), 3),
+                    "bbox": [round(float(c), 1) for c in obj.xyxy],
+                    "foot_point": [round(float(c), 1) for c in obj.foot_point],
+                    "attributes": attr_dict,
+                    "in_zones": in_zones,
+                })
+
+            ws_manager.broadcast_tracks_sync(self.camera_id, {
+                "type": "tracks",
+                "camera_id": self.camera_id,
+                "ts_ms": now_ms,
+                "frame_ts_ms": frame.ts_ms,
+                "lag_ms": max(0, now_ms - frame.ts_ms),
+                "frame_size": [w, h],
+                "tracks": tracks_payload,
+            })
 
     def start(self) -> None:
         """Start the camera runtime pipeline."""

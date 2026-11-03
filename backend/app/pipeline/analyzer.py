@@ -22,7 +22,7 @@ class Analyzer:
         self.running = False
         self.thread: threading.Thread | None = None
         
-    def subscribe(self, callback: Callable[[TrackedFrame], None], maxsize: int = 10):
+    def subscribe(self, callback: Callable[[TrackedFrame], None], maxsize: int = 2):
         import queue
         q = queue.Queue(maxsize=maxsize)
         

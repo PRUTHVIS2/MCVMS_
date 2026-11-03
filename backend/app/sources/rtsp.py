@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 _env_set = False
 
 def _set_rtsp_tcp_env() -> None:
-    """Force RTSP over TCP and a 5s connect timeout in OpenCV FFMPEG backend."""
+    """Force RTSP over TCP, low-delay unbuffered playback and 2.5s connect timeout in OpenCV FFMPEG backend."""
     global _env_set
     if not _env_set:
-        val = "rtsp_transport;tcp|timeout;5000000"
+        val = "rtsp_transport;tcp|timeout;2500000|fflags;nobuffer|max_delay;500000"
         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = val
         if sys.platform == "win32":
             try:
@@ -103,6 +103,11 @@ class RTSPSource:
         self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
         if not self.cap.isOpened():
             raise RuntimeError(f"Failed to open stream {self.url}")
+
+        try:
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        except Exception as e:
+            logger.debug(f"Could not set CAP_PROP_BUFFERSIZE: {e}")
 
         self.backoff_idx = 0
         self.last_frame_received_at = self.clock.now_ms() / 1000.0

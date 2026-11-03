@@ -15,7 +15,7 @@ import ulid
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ValidationError
 
-from app.api.dependencies import require_admin
+from app.api.dependencies import require_admin, require_incharge
 from app.core.audit import log_audit
 from app.core.clock import Clock
 from app.core.db import get_db
@@ -65,8 +65,10 @@ class ZoneOut(BaseModel):
 def list_zones_for_camera(
     camera_id: str,
     db: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserOut, Depends(require_admin)]
+    current_user: Annotated[UserOut, Depends(require_incharge)]
 ):
+    if current_user.role == "incharge" and camera_id not in current_user.cameras:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Camera access forbidden")
     cam = db.execute("SELECT id FROM cameras WHERE id = ?", (camera_id,)).fetchone()
     if not cam:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Camera not found")

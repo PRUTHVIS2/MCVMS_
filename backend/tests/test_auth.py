@@ -44,8 +44,15 @@ def test_login_success():
     assert "password_hash" not in me_resp.json()
 
 def test_login_failure():
+    # Wrong password
     resp = client.post("/api/v1/auth/login", data={"username": "admin", "password": "wrong"})
     assert resp.status_code == 401
+    assert resp.json()["detail"] == "Incorrect password"
+
+    # Non-existent user
+    resp2 = client.post("/api/v1/auth/login", data={"username": "nonexistent", "password": "any"})
+    assert resp2.status_code == 401
+    assert resp2.json()["detail"] == "User does not exist"
 
 def test_rate_limit():
     for _ in range(5):

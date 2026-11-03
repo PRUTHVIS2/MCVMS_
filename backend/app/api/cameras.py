@@ -1,4 +1,5 @@
 import json
+import logging
 import sqlite3
 from typing import Annotated
 
@@ -7,7 +8,7 @@ import ulid
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from app.api.dependencies import require_admin
+from app.api.dependencies import require_admin, require_incharge
 from app.core.audit import log_audit
 from app.core.clock import Clock
 from app.core.db import get_db
@@ -15,6 +16,7 @@ from app.core.security import decrypt_url, encrypt_url
 from app.models.user import UserOut
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
+logger = logging.getLogger(__name__)
 
 
 class CameraCreate(BaseModel):
@@ -41,12 +43,29 @@ class CameraOut(BaseModel):
     status: str
 
 
+class StreamInfoOut(BaseModel):
+    camera_id: str
+    name: str
+    status: str
+    webrtc_url: str
+    hls_url: str
+    width: int | None = None
+    height: int | None = None
+    fps: float | None = None
+
+
 @router.get("", response_model=list[CameraOut])
 def list_cameras(
     db: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserOut, Depends(require_admin)]
+    current_user: Annotated[UserOut, Depends(require_incharge)]
 ):
-    rows = db.execute("SELECT * FROM cameras").fetchall()
+    if current_user.role == "incharge":
+        if not current_user.cameras:
+            return []
+        placeholders = ",".join("?" * len(current_user.cameras))
+        rows = db.execute(f"SELECT * FROM cameras WHERE id IN ({placeholders})", current_user.cameras).fetchall()
+    else:
+        rows = db.execute("SELECT * FROM cameras").fetchall()
     return [
         CameraOut(
             id=r["id"],
@@ -65,8 +84,10 @@ def list_cameras(
 def get_camera(
     cam_id: str,
     db: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserOut, Depends(require_admin)]
+    current_user: Annotated[UserOut, Depends(require_incharge)]
 ):
+    if current_user.role == "incharge" and cam_id not in current_user.cameras:
+        raise HTTPException(status_code=403, detail="Camera access forbidden")
     row = db.execute("SELECT * FROM cameras WHERE id = ?", (cam_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Camera not found")
@@ -80,6 +101,30 @@ def get_camera(
         height=row["height"],
         fps=row["fps"],
         status=row["status"]
+    )
+
+
+@router.get("/{cam_id}/stream-info", response_model=StreamInfoOut)
+def get_stream_info(
+    cam_id: str,
+    db: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserOut, Depends(require_incharge)]
+):
+    if current_user.role == "incharge" and cam_id not in current_user.cameras:
+        raise HTTPException(status_code=403, detail="Camera access forbidden")
+    row = db.execute("SELECT * FROM cameras WHERE id = ?", (cam_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    name = row["name"]
+    return StreamInfoOut(
+        camera_id=row["id"],
+        name=name,
+        status=row["status"],
+        webrtc_url=f"http://localhost:8889/{name}/whep",
+        hls_url=f"http://localhost:8888/{name}/index.m3u8",
+        width=row["width"],
+        height=row["height"],
+        fps=row["fps"]
     )
 
 
@@ -191,8 +236,8 @@ def delete_camera(
     if rt:
         try:
             rt.stop()
-        except Exception:
-            pass
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Error stopping runtime {cam_id}: {e}")
         unregister_runtime(cam_id)
 
     # Delete dependent relations
@@ -234,7 +279,7 @@ def test_camera(
     if not cap.isOpened():
         return {"status": "failed", "reason": "Could not open stream"}
 
-    ret, frame = cap.read()
+    ret, _frame = cap.read()
     if not ret:
         cap.release()
         return {"status": "failed", "reason": "Could not read frame"}
@@ -253,8 +298,10 @@ def test_camera(
 def get_snapshot(
     cam_id: str,
     db: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserOut, Depends(require_admin)]
+    current_user: Annotated[UserOut, Depends(require_incharge)]
 ):
+    if current_user.role == "incharge" and cam_id not in current_user.cameras:
+        raise HTTPException(status_code=403, detail="Camera access forbidden")
     row = db.execute("SELECT rtsp_url_enc FROM cameras WHERE id = ?", (cam_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Camera not found")

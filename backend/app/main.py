@@ -99,7 +99,7 @@ async def camera_monitor():
                     except Exception as e:  # noqa: BLE001
                         logger.error(f"Failed to decrypt RTSP URL for camera {cam_id}: {type(e).__name__} {e}")
                         continue
-                    src = RTSPSource(url, clock, frozen_timeout=5.0, camera_id=cam_id)
+                    src = RTSPSource(url, clock, frozen_timeout=2.5, camera_id=cam_id)
                     src.start()
                     active_sources[cam_id] = src
 
@@ -163,13 +163,20 @@ async def camera_monitor():
                     conn.execute("UPDATE cameras SET status = ? WHERE id = ?", (new_status, cam_id))
                     conn.commit()
 
+                    ws.manager.broadcast_sync({
+                        "type": "camera.status",
+                        "camera_id": cam_id,
+                        "status": new_status,
+                        "ts_ms": now_ms,
+                    })
+
                     if new_status == "offline":
                         alert_service.raise_camera_offline(cam_id, cam_id, now_ms, conn)
                     elif new_status == "online":
                         alert_service.clear_camera_offline(cam_id, conn)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Monitor error: {type(e).__name__}: {e}", exc_info=True)
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
 
 
 @asynccontextmanager

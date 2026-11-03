@@ -58,5 +58,8 @@ def rate_limit_login(request: Request):
     now = time.time()
     login_attempts[ip] = [t for t in login_attempts[ip] if now - t < 60]
     if len(login_attempts[ip]) >= 5:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many login attempts")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please wait 60 seconds."
+        )
     login_attempts[ip].append(now)
