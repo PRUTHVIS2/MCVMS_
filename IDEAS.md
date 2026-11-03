@@ -17,4 +17,6 @@ The agent appends ideas here instead of building them. Nothing here is built unl
 - Barrier/gate actuator control; automatic fines. Never: a human always decides.
 
 ## Add new ideas below
-(none yet)
+- Visual dry-run timeline preview in web player with interactive scrubber and rule trigger markers.
+- Webhook / external notification dispatcher for third-party systems when alerts escalate to critical.
+- Rule evaluation profiling metrics per camera (latency overhead breakdown: geometry vs condition evaluation).

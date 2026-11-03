@@ -1,4 +1,5 @@
 import logging
+import threading
 
 import torch
 from ultralytics import YOLO
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 class Detector:
     def __init__(self, model_path: str = "yolo11n.pt", imgsz: int = 640):
         self.imgsz = imgsz
+        self._lock = threading.Lock()
         try:
             self.model = YOLO(model_path)
             # Device handling with warning
@@ -37,8 +39,9 @@ class Detector:
         if is_single:
             frames = [frames]
             
-        # YOLO handles GPU inference optimizations natively
-        results = self.model.predict(frames, imgsz=self.imgsz, verbose=False, conf=conf, classes=list(self.class_map.keys()))
+        with self._lock:
+            # YOLO handles GPU inference optimizations natively
+            results = self.model.predict(frames, imgsz=self.imgsz, verbose=False, conf=conf, classes=list(self.class_map.keys()))
         
         batch_detections = []
         for result in results:

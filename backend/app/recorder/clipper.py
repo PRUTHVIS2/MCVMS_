@@ -14,12 +14,13 @@ import hashlib
 import subprocess
 import time
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import ulid
 
+from app.config import config
 from app.core.clock import Clock
 
 logger = logging.getLogger(__name__)
@@ -145,12 +146,18 @@ class Clipper:
         clips_dir: str = "data/clips",
         continuous_dir: str = "data/continuous",
         clock: Optional[Clock] = None,
-        segment_tz: Optional[Any] = timezone.utc
+        segment_tz: Optional[Any] = timezone.utc,
+        segment_gap_tolerance_ms: Optional[int] = None
     ):
         self.clips_dir = Path(clips_dir)
         self.continuous_dir = Path(continuous_dir)
         self.clock = clock or Clock()
         self.segment_tz = segment_tz or timezone.utc
+        self.segment_gap_tolerance_ms = (
+            segment_gap_tolerance_ms
+            if segment_gap_tolerance_ms is not None
+            else int(config.clips.get("segment_gap_tolerance_ms", 2500))
+        )
 
     def find_covering_segments(
         self,
@@ -497,8 +504,8 @@ class Clipper:
                 first_seg_start = segments[0][1]
                 latest_seg_end = max(s_end for _, _, s_end in segments)
 
-                # Gap tolerance allows 2.5s for camera keyframe / GOP interval and timestamp quantization
-                gap_tolerance_ms = 2500
+                # Gap tolerance allows for camera keyframe / GOP interval and timestamp quantization (from config)
+                gap_tolerance_ms = self.segment_gap_tolerance_ms
                 has_segment_gap = any(
                     (segments[i + 1][1] - segments[i][2]) > gap_tolerance_ms
                     for i in range(len(segments) - 1)

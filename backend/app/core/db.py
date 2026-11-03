@@ -6,14 +6,27 @@ from pathlib import Path
 from app.config import config
 
 local = threading.local()
+_custom_db_path: Path | None = None
+
+def set_db_path(path: Path | None) -> None:
+    global _custom_db_path
+    _custom_db_path = path
+    if hasattr(local, "conn") and local.conn is not None:
+        try:
+            local.conn.close()
+        except Exception:
+            pass
+        local.conn = None
 
 def get_db_path() -> Path:
+    if _custom_db_path is not None:
+        return _custom_db_path
     data_dir = Path(config.paths.get("data_dir", "data"))
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir / "mcvms.db"
 
 def get_connection() -> sqlite3.Connection:
-    if not hasattr(local, "conn"):
+    if getattr(local, "conn", None) is None:
         conn = sqlite3.connect(
             get_db_path(),
             check_same_thread=False,

@@ -14,7 +14,8 @@ plate: {}
 matching: {}
 identity: {}
 review: {}
-clips: {}
+clips:
+  segment_gap_tolerance_ms: 2500  # Tolerance (ms) for keyframe/GOP interval variance between continuous segments
 id_check: {}
 rules: {}
 training: {}

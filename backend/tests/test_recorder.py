@@ -416,6 +416,7 @@ def test_rebuild_index_restores_sqlite_rows(tmp_path):
     assert event_row["clip_id"] == clip_id
 
     # Test surviving DB wipe: wipe tables, run again, verify restored
+    conn.execute("DELETE FROM alerts")
     conn.execute("DELETE FROM events")
     conn.execute("DELETE FROM sightings")
     conn.execute("DELETE FROM vehicles")

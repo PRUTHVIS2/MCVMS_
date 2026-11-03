@@ -17,7 +17,9 @@ def setup_db():
     
     conn = get_connection()
     conn.execute("DELETE FROM user_cameras")
+    conn.execute("DELETE FROM alerts")
     conn.execute("DELETE FROM events")
+    conn.execute("DELETE FROM calendar_exemptions")
     conn.execute("DELETE FROM registered_actions")
     conn.execute("DELETE FROM zones")
     conn.execute("DELETE FROM cameras")
@@ -57,3 +59,36 @@ def test_camera_crud():
     # Verify RTSP URL is never exposed in API response
     assert "rtsp_url" not in cams[0]
     assert "rtsp_url_enc" not in cams[0]
+
+    # Duplicate camera name returns 409
+    dup_resp = client.post("/api/v1/cameras", json={
+        "name": "cam1",
+        "rtsp_url": "rtsp://secret/another_url"
+    }, headers=headers)
+    assert dup_resp.status_code == 409
+    assert dup_resp.json()["detail"]["code"] == "camera_name_exists"
+
+    # Get single camera
+    cam_id = cam["id"]
+    get_resp = client.get(f"/api/v1/cameras/{cam_id}", headers=headers)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["id"] == cam_id
+    assert "rtsp_url" not in get_resp.json()
+
+    # Update camera
+    patch_resp = client.patch(f"/api/v1/cameras/{cam_id}", json={
+        "name": "cam1_renamed",
+        "enabled": False
+    }, headers=headers)
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["name"] == "cam1_renamed"
+    assert patch_resp.json()["enabled"] is False
+
+    # Delete camera
+    del_resp = client.delete(f"/api/v1/cameras/{cam_id}", headers=headers)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["status"] == "deleted"
+
+    # Verify deleted
+    get_del = client.get(f"/api/v1/cameras/{cam_id}", headers=headers)
+    assert get_del.status_code == 404

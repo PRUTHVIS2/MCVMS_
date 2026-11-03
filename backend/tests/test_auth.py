@@ -91,3 +91,25 @@ def test_permissions_matrix_skeleton():
     # try to hit /api/v1/users as incharge (should be forbidden since it's require_owner)
     fail_resp = client.get("/api/v1/users", headers={"Authorization": f"Bearer {inch_token}"})
     assert fail_resp.status_code == 403
+
+    # In-charge can list events and alerts
+    events_resp = client.get("/api/v1/events", headers={"Authorization": f"Bearer {inch_token}"})
+    assert events_resp.status_code == 200
+
+    alerts_resp = client.get("/api/v1/alerts", headers={"Authorization": f"Bearer {inch_token}"})
+    assert alerts_resp.status_code == 200
+
+    # In-charge cannot dismiss alert or mark false alarm -> 403
+    dismiss_fail = client.post(
+        "/api/v1/alerts/dummy_alert/dismiss",
+        json={"reason": "test"},
+        headers={"Authorization": f"Bearer {inch_token}"}
+    )
+    assert dismiss_fail.status_code == 403
+
+    false_alarm_fail = client.post(
+        "/api/v1/events/dummy_event/false-alarm",
+        json={"reason": "test"},
+        headers={"Authorization": f"Bearer {inch_token}"}
+    )
+    assert false_alarm_fail.status_code == 403
