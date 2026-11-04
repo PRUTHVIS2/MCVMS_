@@ -67,6 +67,21 @@ class DryRunRequest(BaseModel):
     max_frames: int | None = 300
 
 
+class DraftDryRunRequest(BaseModel):
+    zone_id: str
+    spec: RegisteredActionSpec
+    clip_id: str | None = None
+    clip_path: str | None = None
+    max_frames: int | None = 300
+
+
+class SampleClipInfo(BaseModel):
+    id: str
+    name: str
+    path: str
+    category: str
+
+
 class DryRunDecision(BaseModel):
     kind: str
     track_id: int
@@ -225,6 +240,96 @@ def create_action(
     )
 
 
+@router.get("/actions/sample-clips", response_model=list[SampleClipInfo])
+def list_sample_clips(
+    db: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserOut, Depends(require_admin)]
+):
+    """List available sample and stored video clips for dry-run simulation."""
+    workspace_root = Path(__file__).resolve().parent.parent.parent.parent
+    clips_list: list[SampleClipInfo] = []
+
+    # 1. Synthetic clips
+    synth_dir = workspace_root / "backend" / "tests" / "synthetic"
+    if synth_dir.exists():
+        for p in sorted(synth_dir.glob("*.mp4")):
+            clips_list.append(
+                SampleClipInfo(
+                    id=f"synth_{p.stem}",
+                    name=f"Synthetic: {p.stem.replace('_', ' ').title()}",
+                    path=str(p.relative_to(workspace_root)).replace("\\", "/"),
+                    category="synthetic"
+                )
+            )
+
+    # 2. Test data events clips
+    test_events_dir = workspace_root / "test_data" / "events"
+    if test_events_dir.exists():
+        for p in sorted(test_events_dir.glob("*.mp4")):
+            clips_list.append(
+                SampleClipInfo(
+                    id=f"event_{p.stem}",
+                    name=f"Recorded: {p.stem.replace('_', ' ').title()}",
+                    path=str(p.relative_to(workspace_root)).replace("\\", "/"),
+                    category="recorded"
+                )
+            )
+
+    # 3. Database clips
+    try:
+        rows = db.execute("SELECT id, path FROM clips ORDER BY started_at DESC LIMIT 20").fetchall()
+        for r in rows:
+            if r["path"]:
+                cp = Path(r["path"])
+                rel_path = str(cp.relative_to(workspace_root)).replace("\\", "/") if cp.is_relative_to(workspace_root) else str(cp)
+                clips_list.append(
+                    SampleClipInfo(
+                        id=r["id"],
+                        name=f"Clip: {r['id'][:12]}",
+                        path=rel_path,
+                        category="stored"
+                    )
+                )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Failed to list database clips: {e}")
+
+    return clips_list
+
+
+@router.post("/actions/dry-run-draft", response_model=DryRunResponse)
+def dry_run_draft_action(
+    req: DraftDryRunRequest,
+    db: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserOut, Depends(require_admin)]
+):
+    """Evaluate a draft registered action spec on a zone without saving it."""
+    zone_row = db.execute("SELECT * FROM zones WHERE id = ?", (req.zone_id,)).fetchone()
+    if not zone_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Zone not found")
+
+    if zone_row["kind"] == "normal":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "zone_not_special", "message": "Dry-run actions require a special zone"}
+        )
+
+    zone_spec = _row_to_zone_spec(zone_row)
+    try:
+        validate_rule_zone_compatibility(req.spec, zone_spec)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
+
+    return _execute_dry_run(
+        zone_row=zone_row,
+        spec=req.spec,
+        action_id="draft_action",
+        clip_id=req.clip_id,
+        clip_path=req.clip_path,
+        max_frames=req.max_frames,
+        db=db
+    )
+
+
 @router.get("/actions/{action_id}", response_model=ActionOut)
 def get_action(
     action_id: str,
@@ -364,40 +469,35 @@ def delete_action(
     return {"status": "deleted", "id": action_id}
 
 
-@router.post("/actions/{action_id}/dry-run", response_model=DryRunResponse)
-def dry_run_action(
+def _execute_dry_run(
+    zone_row: sqlite3.Row,
+    spec: RegisteredActionSpec,
     action_id: str,
-    req: DryRunRequest,
-    db: Annotated[sqlite3.Connection, Depends(get_db)],
-    current_user: Annotated[UserOut, Depends(require_admin)]
-):
-    """Evaluate an action against a video clip without writing alerts or real events."""
-    row = db.execute("SELECT * FROM registered_actions WHERE id = ?", (action_id,)).fetchone()
-    if not row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action not found")
-
-    zone_row = db.execute("SELECT * FROM zones WHERE id = ?", (row["zone_id"],)).fetchone()
-    if not zone_row:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Associated zone not found")
-
+    clip_id: str | None,
+    clip_path: str | None,
+    max_frames: int | None,
+    db: sqlite3.Connection
+) -> DryRunResponse:
     clip_file: Path | None = None
-    if req.clip_id:
-        c = db.execute("SELECT path FROM clips WHERE id = ?", (req.clip_id,)).fetchone()
+    if clip_id:
+        c = db.execute("SELECT path FROM clips WHERE id = ?", (clip_id,)).fetchone()
         if c and c["path"]:
             clip_file = Path(c["path"])
-    elif req.clip_path:
-        clip_file = Path(req.clip_path)
+    elif clip_path:
+        clip_file = Path(clip_path)
+        if not clip_file.exists():
+            workspace_root = Path(__file__).resolve().parent.parent.parent.parent
+            cand = workspace_root / clip_path
+            if cand.exists():
+                clip_file = cand
 
     if not clip_file or not clip_file.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Clip file not found: {clip_file}"
+            detail=f"Clip file not found: {clip_file or clip_path}"
         )
 
-    # Compile the zone and rule
-    spec = RegisteredActionSpec.model_validate_json(row["spec_json"])
     pts_raw = json.loads(zone_row["points_json"])
-
     cap = cv2.VideoCapture(str(clip_file))
     if not cap.isOpened():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not open video file")
@@ -406,7 +506,6 @@ def dry_run_action(
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1080
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
 
-    # Denormalize points if normalized
     pts = [(float(p[0]), float(p[1])) for p in pts_raw]
     if all(0.0 <= p[0] <= 1.0 and 0.0 <= p[1] <= 1.0 for p in pts):
         pts = denormalize_points(pts, w, h)
@@ -432,13 +531,13 @@ def dry_run_action(
     attr_store = AttributeStore()
 
     frame_idx = 0
-    max_frames = req.max_frames or 300
+    max_f = max_frames or 300
     all_decisions: list[DryRunDecision] = []
 
     frame_interval_ms = int(1000.0 / fps) if fps > 0 else 40
     start_ts_ms = Clock().now_ms()
 
-    while frame_idx < max_frames:
+    while frame_idx < max_f:
         ret, frame_bgr = cap.read()
         if not ret or frame_bgr is None:
             break
@@ -484,4 +583,32 @@ def dry_run_action(
         total_frames_processed=frame_idx,
         decisions_count=len(all_decisions),
         decisions=all_decisions
+    )
+
+
+@router.post("/actions/{action_id}/dry-run", response_model=DryRunResponse)
+def dry_run_action(
+    action_id: str,
+    req: DryRunRequest,
+    db: Annotated[sqlite3.Connection, Depends(get_db)],
+    current_user: Annotated[UserOut, Depends(require_admin)]
+):
+    """Evaluate an action against a video clip without writing alerts or real events."""
+    row = db.execute("SELECT * FROM registered_actions WHERE id = ?", (action_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action not found")
+
+    zone_row = db.execute("SELECT * FROM zones WHERE id = ?", (row["zone_id"],)).fetchone()
+    if not zone_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Associated zone not found")
+
+    spec = RegisteredActionSpec.model_validate_json(row["spec_json"])
+    return _execute_dry_run(
+        zone_row=zone_row,
+        spec=spec,
+        action_id=action_id,
+        clip_id=req.clip_id,
+        clip_path=req.clip_path,
+        max_frames=req.max_frames,
+        db=db
     )

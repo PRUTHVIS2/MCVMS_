@@ -173,4 +173,153 @@ export interface AuditLogEntry {
   detail: Record<string, any>;
 }
 
+// Rule & Action Types for Step 10 Setup Wizard
+export interface RuleCondition {
+  attr: string;
+  op: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in';
+  value: any;
+}
+
+export interface RuleSubject {
+  kind: 'vehicle' | 'person';
+  where?: RuleCondition[];
+  min_box_px?: number;
+}
+
+export interface RuleTrigger {
+  template: 'presence' | 'dwell' | 'line_crossing' | 'count_threshold';
+  min_seconds?: number;
+  dwell_seconds?: number;
+  count_threshold?: number;
+  reset_after_s?: number;
+  max_gap_s?: number;
+}
+
+export interface RuleConfirm {
+  n_of_m?: [number, number];
+  min_confidence?: number;
+}
+
+export interface RuleSchedule {
+  days?: string[];
+  from?: string;
+  to?: string;
+  timezone?: string;
+}
+
+export interface RuleValidRange {
+  from_date?: string | null;
+  until_date?: string | null;
+}
+
+export interface RuleExemptions {
+  calendar_ids?: string[];
+  note?: string;
+}
+
+export interface EscalationRow {
+  if_count_in_window: {
+    n: number;
+    window_min: number;
+  };
+  severity: AlertSeverity;
+}
+
+export interface RuleResponse {
+  severity: AlertSeverity;
+  pre_roll_s?: number;
+  hold_s?: number;
+  max_clip_min?: number;
+  cooldown_s?: number;
+  alert_ttl_min?: number;
+  escalation?: EscalationRow[];
+}
+
+export interface RegisteredActionSpec {
+  name: string;
+  subject: RuleSubject;
+  trigger: RuleTrigger;
+  confirm?: RuleConfirm;
+  schedule?: RuleSchedule;
+  valid?: RuleValidRange;
+  exemptions?: RuleExemptions;
+  response: RuleResponse;
+}
+
+export interface ActionItem {
+  id: string;
+  zone_id: string;
+  name: string;
+  spec: RegisteredActionSpec;
+  severity: AlertSeverity;
+  enabled: boolean;
+  valid_from?: number | null;
+  valid_until?: number | null;
+  created_by?: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface TemplateInfo {
+  template: string;
+  name: string;
+  description: string;
+  allowed_shapes: string[];
+  required_params: string[];
+  optional_params: string[];
+}
+
+export interface AttributeInfo {
+  attr: string;
+  type: string;
+  description: string;
+  allowed_ops: string[];
+  values?: any[] | null;
+}
+
+export interface RulePresetsResponse {
+  templates: TemplateInfo[];
+  catalogue: Record<string, AttributeInfo[]>;
+  operators: string[];
+  severities: string[];
+  presets: Record<string, RegisteredActionSpec>;
+}
+
+export interface CalendarExemption {
+  id: string;
+  label: string;
+  date_from: string;
+  date_to: string;
+  scope: 'all' | 'camera' | 'action';
+  camera_id?: string | null;
+  action_id?: string | null;
+  created_by?: string | null;
+  created_at: number;
+}
+
+export interface DryRunDecision {
+  kind: string;
+  track_id: number;
+  ts_ms: number;
+  confidence: number;
+  evidence: Record<string, any>;
+  dry_run: boolean;
+}
+
+export interface DryRunResponse {
+  action_id: string;
+  rule_name: string;
+  total_frames_processed: number;
+  decisions_count: number;
+  decisions: DryRunDecision[];
+}
+
+export interface SampleClip {
+  id: string;
+  name: string;
+  path: string;
+  category: string;
+}
+
+
 

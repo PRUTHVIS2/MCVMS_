@@ -67,18 +67,11 @@ describe('SystemPage Component', () => {
     });
   });
 
-  it('renders "About accuracy" limitations section from docs/01 s6', async () => {
+  it('does not render "About accuracy" limitations section', async () => {
     render(<SystemPage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('about-accuracy-section')).toBeInTheDocument();
+      expect(screen.queryByTestId('about-accuracy-section')).not.toBeInTheDocument();
     });
-
-    expect(screen.getByText(/1\. Licence Plates/i)).toBeInTheDocument();
-    expect(screen.getByText(/2\. Vehicle Colour/i)).toBeInTheDocument();
-    expect(screen.getByText(/3\. Heavy Vehicle Heuristic/i)).toBeInTheDocument();
-    expect(screen.getByText(/4\. ID-Card Physical Visibility/i)).toBeInTheDocument();
-    expect(screen.getByText(/5\. No Identity Guessing/i)).toBeInTheDocument();
-    expect(screen.getByText(/6\. Appearance Matching/i)).toBeInTheDocument();
   });
 });

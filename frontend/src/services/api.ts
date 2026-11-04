@@ -1,4 +1,23 @@
-import type { Alert, AuditLogEntry, Camera, EventItem, StreamInfo, SystemHealth, User, Zone } from '../types';
+import type {
+  ActionItem,
+  Alert,
+  AuditLogEntry,
+  CalendarExemption,
+  Camera,
+  CameraFeatures,
+  Direction,
+  DryRunResponse,
+  EventItem,
+  RegisteredActionSpec,
+  RulePresetsResponse,
+  SampleClip,
+  StreamInfo,
+  SystemHealth,
+  User,
+  Zone,
+  ZoneKind,
+  ZoneShape,
+} from '../types';
 
 const TOKEN_KEY = 'mcvms_token';
 
@@ -104,9 +123,190 @@ class ApiClient {
     return `${this.baseUrl}/cameras/${cameraId}/snapshot`;
   }
 
+  public async createCamera(data: {
+    name: string;
+    rtsp_url: string;
+    features?: CameraFeatures;
+  }): Promise<Camera> {
+    return this.request<Camera>('/cameras', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public async updateCamera(
+    cameraId: string,
+    update: { name?: string; enabled?: boolean; features?: CameraFeatures; rtsp_url?: string }
+  ): Promise<Camera> {
+    return this.request<Camera>(`/cameras/${cameraId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    });
+  }
+
+  public async deleteCamera(cameraId: string): Promise<{ status: string; id: string }> {
+    return this.request<{ status: string; id: string }>(`/cameras/${cameraId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  public async testCamera(cameraId: string): Promise<{
+    status: string;
+    width?: number;
+    height?: number;
+    fps?: number;
+    reason?: string;
+  }> {
+    return this.request<{
+      status: string;
+      width?: number;
+      height?: number;
+      fps?: number;
+      reason?: string;
+    }>(`/cameras/${cameraId}/test`, {
+      method: 'POST',
+    });
+  }
+
   // Zones
   public async listZones(cameraId: string): Promise<Zone[]> {
     return this.request<Zone[]>(`/cameras/${cameraId}/zones`);
+  }
+
+  public async getZone(zoneId: string): Promise<Zone> {
+    return this.request<Zone>(`/zones/${zoneId}`);
+  }
+
+  public async createZone(
+    cameraId: string,
+    zone: {
+      name: string;
+      kind: ZoneKind;
+      shape: ZoneShape;
+      points: [number, number][];
+      direction?: Direction | null;
+      is_read_area?: boolean;
+      enabled?: boolean;
+    }
+  ): Promise<Zone> {
+    return this.request<Zone>(`/cameras/${cameraId}/zones`, {
+      method: 'POST',
+      body: JSON.stringify(zone),
+    });
+  }
+
+  public async updateZone(
+    zoneId: string,
+    update: {
+      name?: string;
+      kind?: ZoneKind;
+      shape?: ZoneShape;
+      points?: [number, number][];
+      direction?: Direction | null;
+      is_read_area?: boolean;
+      enabled?: boolean;
+    }
+  ): Promise<Zone> {
+    return this.request<Zone>(`/zones/${zoneId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    });
+  }
+
+  public async deleteZone(zoneId: string): Promise<{ status: string; id: string }> {
+    return this.request<{ status: string; id: string }>(`/zones/${zoneId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Actions & Rules
+  public async listActions(zoneId: string): Promise<ActionItem[]> {
+    return this.request<ActionItem[]>(`/zones/${zoneId}/actions`);
+  }
+
+  public async getAction(actionId: string): Promise<ActionItem> {
+    return this.request<ActionItem>(`/actions/${actionId}`);
+  }
+
+  public async createAction(zoneId: string, spec: RegisteredActionSpec): Promise<ActionItem> {
+    return this.request<ActionItem>(`/zones/${zoneId}/actions`, {
+      method: 'POST',
+      body: JSON.stringify(spec),
+    });
+  }
+
+  public async updateAction(
+    actionId: string,
+    update: { name?: string; enabled?: boolean; spec?: RegisteredActionSpec }
+  ): Promise<ActionItem> {
+    return this.request<ActionItem>(`/actions/${actionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    });
+  }
+
+  public async deleteAction(actionId: string): Promise<{ status: string; id: string }> {
+    return this.request<{ status: string; id: string }>(`/actions/${actionId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Templates & Presets
+  public async getRuleTemplates(): Promise<RulePresetsResponse> {
+    return this.request<RulePresetsResponse>('/rule-templates');
+  }
+
+  public async listSampleClips(): Promise<SampleClip[]> {
+    return this.request<SampleClip[]>('/actions/sample-clips');
+  }
+
+  // Dry-run Simulation
+  public async dryRunAction(
+    actionId: string,
+    params: { clip_id?: string; clip_path?: string; max_frames?: number }
+  ): Promise<DryRunResponse> {
+    return this.request<DryRunResponse>(`/actions/${actionId}/dry-run`, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
+  public async dryRunDraft(params: {
+    zone_id: string;
+    spec: RegisteredActionSpec;
+    clip_id?: string;
+    clip_path?: string;
+    max_frames?: number;
+  }): Promise<DryRunResponse> {
+    return this.request<DryRunResponse>('/actions/dry-run-draft', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
+  // Calendar Exemptions
+  public async listCalendarExemptions(): Promise<CalendarExemption[]> {
+    return this.request<CalendarExemption[]>('/calendar');
+  }
+
+  public async createCalendarExemption(data: {
+    label: string;
+    date_from: string;
+    date_to: string;
+    scope: 'all' | 'camera' | 'action';
+    camera_id?: string | null;
+    action_id?: string | null;
+  }): Promise<CalendarExemption> {
+    return this.request<CalendarExemption>('/calendar', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public async deleteCalendarExemption(exemptionId: string): Promise<{ status: string; id: string }> {
+    return this.request<{ status: string; id: string }>(`/calendar/${exemptionId}`, {
+      method: 'DELETE',
+    });
   }
 
   // Alerts

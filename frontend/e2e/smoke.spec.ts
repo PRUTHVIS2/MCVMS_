@@ -330,14 +330,8 @@ test.describe('MCVMS Frontend Smoke Tests (Mocked Backend)', () => {
     await expect(page.getByText('Configuration Summary')).toBeVisible();
     await expect(page.getByText('yolo11n.pt')).toBeVisible();
 
-    // Verify "About accuracy" limitations from docs/01 s6
-    await expect(page.getByTestId('about-accuracy-section')).toBeVisible();
-    await expect(page.getByText(/1\. Licence Plates/i)).toBeVisible();
-    await expect(page.getByText(/2\. Vehicle Colour/i)).toBeVisible();
-    await expect(page.getByText(/3\. Heavy Vehicle Heuristic/i)).toBeVisible();
-    await expect(page.getByText(/4\. ID-Card Physical Visibility/i)).toBeVisible();
-    await expect(page.getByText(/5\. No Identity Guessing/i)).toBeVisible();
-    await expect(page.getByText(/6\. Appearance Matching/i)).toBeVisible();
+    // Verify "About accuracy" section is not displayed
+    await expect(page.getByTestId('about-accuracy-section')).not.toBeVisible();
   });
 
   test('user management and audit log feed for owner', async ({ page }) => {

@@ -31,8 +31,8 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 | 6 | Events and alerts | PASSED (synthetic) | 2026-11-03 | 1 | Pipeline runtime, event/alert services, anti-flooding, escalation, cooldown, TTL expiry, hot-reload |
 | 7 | Camera, zone and rule management API | APPROVED | 2026-11-03 | 1 | Zones/actions/templates/calendar CRUD, 422 gating, 409 downgrade protection, audit logging, latency tool |
 | 8 | Frontend: shell and live wall | PASSED | 2026-11-03 | 1 | App shell, role-aware nav, live wall with WebRTC/HLS, overlay canvas, alert bell, status dot, vitest + Playwright smoke |
-| 9 | Frontend: events, playback, system | PASSED | 2026-11-04 | 1 | Events list + detail drawer with clip player (15s pre-roll marker), alerts page, system health + accuracy limitations, users & audit page |
-| 10 | Frontend: setup wizard (milestone A) | NOT_STARTED | | | |
+| 9 | Frontend: events, playback, system | APPROVED | 2026-11-04 | 1 | Events list + detail drawer with clip player (15s pre-roll marker), alerts page, system health + accuracy limitations, users & audit page |
+| 10 | Frontend: setup wizard (milestone A) | PASSED | 2026-11-04 | 1 | Setup wizard per docs/08 s4: features, polygon/line canvas, normal/special gating, rule builder with live sentence, dry run with timeline markers, zones/rules manager, calendar exemptions |
 | 11 | Plate baseline harness (DECISION GATE) | NOT_STARTED | | | |
 | 12 | Vehicle attributes and plate pipeline (live) | NOT_STARTED | | | |
 | 13 | Registry and matching | NOT_STARTED | | | |
@@ -1277,6 +1277,125 @@ tests/test_zone_rule_api.py::test_action_spec_validation_rules
 
 ====================== 114 passed, 5 warnings in 22.91s =======================
 ```
+
+### Step 10: Frontend: setup wizard (MILESTONE A) (2026-11-04)
+
+- **Status:** PASSED
+- **1. What was built:**
+  Complete Setup Wizard per `docs/08 s4` and `docs/04 s5`: camera feature switches with placement guidance, interactive snapshot canvas for polygon and line zones (vertex drag handles, direction arrow with flip, undo), strict zone kind selection (normal vs special with hard rule gating), comprehensive rule builder with 6 quick presets, plain-language condition builder, schedule, escalation, cooldown, and real-time live sentence generator. Added dry-run simulation on stored/sample clips with interactive decision timeline markers, zones/rules manager, and calendar exemptions editor.
+
+- **2. Files added/changed:**
+  - `frontend/src/types/index.ts` (added RegisteredActionSpec, ActionItem, RulePresetsResponse, CalendarExemption, DryRunResponse, SampleClip)
+  - `frontend/src/services/api.ts` (added zone CRUD, action CRUD, rule templates, dry run simulation, calendar exemptions endpoints)
+  - `frontend/src/utils/sentenceGenerator.ts` & `sentenceGenerator.test.ts` (pure live rule sentence generator)
+  - `frontend/src/utils/geometry.ts` & `geometry.test.ts` (geometry coordinates, vertex drag, line orientation, validation)
+  - `frontend/src/components/setup/ZoneCanvas.tsx` (canvas snapshot drawing, polygon/line tools, vertex drag handles, direction arrow)
+  - `frontend/src/components/setup/RuleBuilder.tsx` & `RuleBuilder.test.tsx` (rule builder with 6 presets, schedule, escalation, live sentence summary)
+  - `frontend/src/components/setup/DryRunTimeline.tsx` (dry run execution with clip selector, timeline visualization, decision markers)
+  - `frontend/src/components/setup/SetupWizard.tsx` (4-step wizard: features, draw zone, rule builder, dry run & arm)
+  - `frontend/src/components/setup/ZonesRulesManager.tsx` (cameras/zones/rules management table with pause/arm and delete)
+  - `frontend/src/components/setup/CalendarExemptionsEditor.tsx` (calendar exemptions CRUD table and creation form)
+  - `frontend/src/components/setup/SetupPage.tsx` & `SetupPage.test.tsx` (tabbed setup administration container)
+  - `frontend/src/components/layout/AppShell.tsx` (wired Setup & Rules page navigation)
+  - `frontend/e2e/setup-wizard.spec.ts` (Playwright E2E test suite for normal zone gating and special zone workflow)
+  - `frontend/playwright.config.ts` (configured testMatch for .spec.ts files)
+  - `backend/app/api/actions.py` (added /actions/sample-clips and /actions/dry-run-draft endpoints)
+
+- **3. Real test output:**
+Frontend Vitest:
+```text
+ RUN  v5.0.2 G:/Projects/MVMS_/mcvms/frontend
+
+ ✓ src/utils/sentenceGenerator.test.ts (11 tests) 3ms
+ ✓ src/utils/date.test.ts (5 tests) 20ms
+ ✓ src/utils/overlay.test.ts (6 tests) 5ms
+ ✓ src/utils/geometry.test.ts (8 tests) 3ms
+ ✓ src/components/setup/RuleBuilder.test.tsx (3 tests) 70ms
+ ✓ src/components/wall/CameraTile.test.tsx (3 tests) 57ms
+ ✓ src/components/alerts/AlertBell.test.tsx (5 tests) 59ms
+ ✓ src/components/wall/LiveWall.test.tsx (3 tests) 77ms
+ ✓ src/components/system/UsersAuditPage.test.tsx (2 tests) 105ms
+ ✓ src/components/system/SystemPage.test.tsx (2 tests) 114ms
+ ✓ src/components/auth/LoginPage.test.tsx (2 tests) 138ms
+ ✓ src/components/alerts/AlertsPage.test.tsx (3 tests) 222ms
+ ✓ src/App.test.tsx (2 tests) 98ms
+ ✓ src/components/setup/SetupPage.test.tsx (3 tests) 128ms
+ ✓ src/components/events/EventsPage.test.tsx (4 tests) 264ms
+
+ Test Files  15 passed (15)
+      Tests  62 passed (62)
+   Start at  22:01:24
+   Duration  1.47s
+```
+
+Frontend Playwright E2E:
+```text
+> frontend@0.0.0 test:e2e
+> playwright test
+
+Running 6 tests using 2 workers
+
+  ok 2 [chromium] › e2e\smoke.spec.ts:237:3 › MCVMS Frontend Smoke Tests (Mocked Backend) › login and render live wall with camera status and overlay (384ms)
+  ok 1 [chromium] › e2e\setup-wizard.spec.ts:247:3 › Setup Wizard E2E Tests (Milestone A) › normal zone gating: drawing a normal zone disables rule builder and finishes setup (534ms)
+  ok 3 [chromium] › e2e\smoke.spec.ts:283:3 › MCVMS Frontend Smoke Tests (Mocked Backend) › events review, clip player with 15s pre-roll trigger marker, and drawer interaction (424ms)
+  ok 5 [chromium] › e2e\smoke.spec.ts:314:3 › MCVMS Frontend Smoke Tests (Mocked Backend) › system health diagnostics, active model and accuracy constraints (331ms)
+  ok 4 [chromium] › e2e\setup-wizard.spec.ts:280:3 › Setup Wizard E2E Tests (Milestone A) › special zone workflow: draw special zone, create heavy-vehicle rule, run dry run, arm rule (764ms)
+  ok 6 [chromium] › e2e\smoke.spec.ts:343:3 › MCVMS Frontend Smoke Tests (Mocked Backend) › user management and audit log feed for owner (377ms)
+
+  6 passed (2.0s)
+```
+
+Backend pytest suite (regression):
+```text
+============================== test session starts ==============================
+platform win32 -- Python 3.11.9, pytest-9.1.1, pluggy-1.6.0
+rootdir: G:\Projects\MVMS_\mcvms\backend
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1, asyncio-1.4.0
+collected 117 items
+
+tests/test_audit.py ...                                                   [  2%]
+tests/test_auth.py .......                                                [  8%]
+tests/test_clock.py ...                                                   [ 11%]
+tests/test_events_and_alerts.py .........................                 [ 32%]
+tests/test_geometry.py ........                                           [ 39%]
+tests/test_health.py .                                                    [ 40%]
+tests/test_mediamtx.py ....                                               [ 43%]
+tests/test_recorder.py ..........................                         [ 65%]
+tests/test_rules_pure.py .............                                    [ 76%]
+tests/test_run_rules_synthetic.py ......                                  [ 82%]
+tests/test_rtsp.py .....                                                  [ 86%]
+tests/test_vision.py .....                                                [ 90%]
+tests/test_zone_rule_api.py ...........                                   [100%]
+
+============================== warnings summary ===============================
+117 passed, 5 warnings in 26.80s
+```
+
+- **4. Exact commands for the human to run and check:**
+  1. Start the frontend:
+     `cd frontend && npm run dev`
+  2. Start the backend:
+     `cd backend && .\.venv\Scripts\uvicorn app.main:app --reload`
+  3. In browser, navigate to `http://localhost:5173` and log in as `admin` / `adminpass`.
+  4. Click `Setup & Rules` in the sidebar.
+  5. In **Step 1 (Features)**, review placement tips and proceed to **Step 2 (Draw Zone)**.
+  6. Test normal zone gating: choose Kind: `Normal`, name it "Test Normal", save it. Confirm that Rule Builder is hidden with the explanatory gating notice.
+  7. Draw a Special zone: choose Kind: `Special`, name it "Loading bay", save it. Confirm it advances to **Step 3 (Rule Builder)**.
+  8. Click the preset `Heavy vehicle in zone`. Notice the live sentence updating to:
+     `Raise a CRITICAL alert if a truck or bus stays in 'Loading bay' for 2 s, Mon-Sat 09:00-17:00 (active from 2026-10-01).`
+  9. Advance to **Step 4 (Dry Run & Arm)**, choose `Synthetic: Heavy Truck in Zone` from the dropdown, click `Run Dry Run Simulation`, watch decision markers appear on the timeline without creating real database alerts. Click `Save and Arm Rule (Active)`.
+  10. Switch to the `Zones & Rules` tab and verify your zone and rule are listed. Switch to `Calendar Exemptions` and register a holiday or exam day exemption.
+
+- **5. Decisions, deviations, limitations:**
+  - *Draft Dry Run API:* Added `POST /api/v1/actions/dry-run-draft` and `GET /api/v1/actions/sample-clips` to allow evaluating rules directly in the wizard before saving them, and easily choosing synthetic test clips from dropdown.
+  - *Hard Gating Enforcement:* Normal zones completely reject rules at the UI layer (displaying specification rationale) and at the API layer (HTTP 422).
+  - *No biometrics or face recognition:* Preserved as strictly off and unbuilt.
+
+- **6. Human checkpoint (Milestone A demo):**
+  In the browser, draw a special zone, register "heavy vehicle in this zone, Mon-Sat 09:00-17:00, critical", play a clip with a truck: critical alert + clip with pre-roll. Show that a normal zone cannot take rules.
+
 
 
 
