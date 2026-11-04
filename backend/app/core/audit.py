@@ -13,3 +13,4 @@ def log_audit(user_id: str | None, action: str, target: str, detail: dict | None
         "INSERT INTO audit_log (ts, user_id, action, target, detail_json) VALUES (?, ?, ?, ?, ?)",
         (ts, user_id, action, target, detail_str)
     )
+    conn.commit()

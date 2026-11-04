@@ -209,8 +209,15 @@ class EventService:
         return {}
 
     def get_event_by_id(self, db_conn: sqlite3.Connection, event_id: str) -> dict[str, Any] | None:
-        """Fetch event by ID with parsed JSON fields."""
-        row = db_conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+        """Fetch event by ID with parsed JSON fields, camera_name and zone_name."""
+        query = """
+            SELECT e.*, c.name AS camera_name, z.name AS zone_name
+            FROM events e
+            LEFT JOIN cameras c ON e.camera_id = c.id
+            LEFT JOIN zones z ON e.zone_id = z.id
+            WHERE e.id = ?
+        """
+        row = db_conn.execute(query, (event_id,)).fetchone()
         if not row:
             return None
         d = dict(row)
@@ -241,32 +248,40 @@ class EventService:
         clauses = []
         params = []
         if camera_id:
-            clauses.append("camera_id = ?")
+            clauses.append("e.camera_id = ?")
             params.append(camera_id)
         if zone_id:
-            clauses.append("zone_id = ?")
+            clauses.append("e.zone_id = ?")
             params.append(zone_id)
         if action_id:
-            clauses.append("action_id = ?")
+            clauses.append("e.action_id = ?")
             params.append(action_id)
         if severity:
-            clauses.append("severity = ?")
+            clauses.append("e.severity = ?")
             params.append(severity)
         if status:
-            clauses.append("status = ?")
+            clauses.append("e.status = ?")
             params.append(status)
         if from_ts is not None:
-            clauses.append("started_at >= ?")
+            clauses.append("e.started_at >= ?")
             params.append(from_ts)
         if to_ts is not None:
-            clauses.append("started_at <= ?")
+            clauses.append("e.started_at <= ?")
             params.append(to_ts)
         if vehicle_id is not None:
-            clauses.append("vehicle_id = ?")
+            clauses.append("e.vehicle_id = ?")
             params.append(vehicle_id)
 
         where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        query = f"SELECT * FROM events {where_clause} ORDER BY started_at DESC LIMIT ?"
+        query = f"""
+            SELECT e.*, c.name AS camera_name, z.name AS zone_name
+            FROM events e
+            LEFT JOIN cameras c ON e.camera_id = c.id
+            LEFT JOIN zones z ON e.zone_id = z.id
+            {where_clause}
+            ORDER BY e.started_at DESC
+            LIMIT ?
+        """
         params.append(limit)
 
         rows = db_conn.execute(query, params).fetchall()

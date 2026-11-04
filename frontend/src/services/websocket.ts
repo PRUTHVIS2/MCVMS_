@@ -1,4 +1,4 @@
-import type { Alert, CameraStatus, TracksMessage } from '../types';
+import type { Alert, CameraStatus, EventItem, TracksMessage } from '../types';
 import { api } from './api';
 
 export type ConnectionState = 'connected' | 'connecting' | 'disconnected';
@@ -191,6 +191,35 @@ class WebSocketService {
   public onAlert(callback: (msg: AlertMessage) => void): () => void {
     this.listeners.alert.add(callback);
     return () => this.listeners.alert.delete(callback);
+  }
+
+  public onAlertCreated(callback: (alert: Alert) => void): () => void {
+    return this.onAlert((msg) => {
+      if (msg.type === 'alert.created') callback(msg.data);
+    });
+  }
+
+  public onAlertUpdated(callback: (alert: Alert) => void): () => void {
+    return this.onAlert((msg) => {
+      if (msg.type === 'alert.updated') callback(msg.data);
+    });
+  }
+
+  public onEvent(callback: (msg: EventMessage) => void): () => void {
+    this.listeners.event.add(callback);
+    return () => this.listeners.event.delete(callback);
+  }
+
+  public onEventCreated(callback: (event: EventItem) => void): () => void {
+    return this.onEvent((msg) => {
+      if (msg.type === 'event.created') callback(msg.data as unknown as EventItem);
+    });
+  }
+
+  public onEventUpdated(callback: (event: EventItem) => void): () => void {
+    return this.onEvent((msg) => {
+      if (msg.type === 'event.updated') callback(msg.data as unknown as EventItem);
+    });
   }
 
   public onConnectionChange(callback: (status: ConnectionState) => void): () => void {

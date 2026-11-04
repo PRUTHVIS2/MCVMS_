@@ -103,3 +103,74 @@ export interface Alert {
   acked_by?: string;
 }
 
+export type EventSeverity = 'low' | 'medium' | 'critical';
+export type EventStatus = 'open' | 'acknowledged' | 'false_alarm' | 'resolved';
+
+export interface EventItem {
+  id: string;
+  action_id?: string | null;
+  zone_id?: string | null;
+  camera_id: string;
+  camera_name?: string;
+  zone_name?: string;
+  action_name?: string;
+  severity: EventSeverity;
+  kind: string;
+  status: EventStatus;
+  started_at: number;
+  ended_at?: number | null;
+  track_id?: number | null;
+  subject?: Record<string, any>;
+  subject_json?: string;
+  confidence?: number | null;
+  evidence?: Record<string, any>;
+  evidence_json?: string | null;
+  vehicle_id?: number | null;
+  sighting_id?: string | null;
+  clip_id?: string | null;
+  dry_run?: boolean | number;
+  ack_by?: string | null;
+  ack_at?: number | null;
+  note?: string | null;
+}
+
+export interface DiskHealth {
+  total_gb: number;
+  used_gb: number;
+  free_gb: number;
+  percent_used: number;
+  status: 'ok' | 'warning' | 'critical';
+}
+
+export interface GpuStats {
+  available: boolean;
+  device: string;
+  name: string;
+  memory_used_mb: number;
+  memory_total_mb: number;
+}
+
+export interface SystemHealth {
+  status: string;
+  timestamp: number;
+  cameras: Camera[];
+  disk: DiskHealth;
+  gpu: GpuStats;
+  decode_errors: Record<string, number>;
+  plate_accuracy?: {
+    wrong_accepted_rate: number;
+    target: string;
+  };
+}
+
+export interface AuditLogEntry {
+  id: number;
+  ts: number;
+  user_id: string | null;
+  username?: string | null;
+  action: string;
+  target: string;
+  detail: Record<string, any>;
+}
+
+

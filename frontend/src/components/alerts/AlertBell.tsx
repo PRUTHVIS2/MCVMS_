@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAlerts } from '../../context/AlertsContext';
 import type { AlertSeverity } from '../../types';
+import { formatLocalTime } from '../../utils/date';
 
 export const AlertBell: React.FC = () => {
   const { alerts, unackCount, highestSeverity, soundEnabled, toggleSound, ackAlert } = useAlerts();
@@ -47,20 +48,7 @@ export const AlertBell: React.FC = () => {
     }
   };
 
-  const formatTime = (tsMs?: number) => {
-    if (!tsMs || isNaN(tsMs)) return '';
-    try {
-      return new Intl.DateTimeFormat('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      }).format(new Date(tsMs));
-    } catch {
-      return '';
-    }
-  };
+
 
   return (
     <div className="relative" ref={panelRef}>
@@ -152,7 +140,7 @@ export const AlertBell: React.FC = () => {
                       {alert.level}
                     </span>
                     <span className="text-[11px] text-slate-400">
-                      {formatTime(alert.created_at ?? alert.opened_at)}
+                      {formatLocalTime(alert.created_at ?? alert.opened_at)}
                     </span>
                   </div>
 

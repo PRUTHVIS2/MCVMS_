@@ -174,7 +174,7 @@ class AlertService:
         }
 
         # WebSocket broadcast
-        ws_manager.broadcast_alert("alert.created", alert_data)
+        ws_manager.broadcast_alert("alert.created", self._enrich_alert(dict(alert_data), db_conn))
 
         # Dispatch external notifiers
         try:
@@ -182,12 +182,51 @@ class AlertService:
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to dispatch alert notification: {e}")
 
-        return alert_data
+        return self._enrich_alert(alert_data, db_conn)
+
+    def _resolve_camera_name(self, camera_id: str, db_conn: sqlite3.Connection) -> str:
+        """Resolve human-readable camera name from camera_id."""
+        try:
+            row = db_conn.execute("SELECT name FROM cameras WHERE id = ?", (camera_id,)).fetchone()
+            if row and row["name"]:
+                return str(row["name"])
+        except Exception:
+            pass
+        return camera_id
+
+    def _enrich_alert(self, alert: dict[str, Any], db_conn: sqlite3.Connection) -> dict[str, Any]:
+        """Attach camera_id, camera_name, and zone_name to alert dict for UI display."""
+        target_type = alert.get("target_type")
+        target_id = alert.get("target_id")
+        event_id = alert.get("event_id")
+
+        if target_type == "camera" and target_id:
+            alert["camera_id"] = target_id
+            alert["camera_name"] = self._resolve_camera_name(target_id, db_conn)
+        elif event_id:
+            try:
+                row = db_conn.execute(
+                    """
+                    SELECT e.camera_id, c.name as camera_name, z.name as zone_name
+                    FROM events e
+                    LEFT JOIN cameras c ON e.camera_id = c.id
+                    LEFT JOIN zones z ON e.zone_id = z.id
+                    WHERE e.id = ?
+                    """,
+                    (event_id,)
+                ).fetchone()
+                if row:
+                    alert["camera_id"] = row["camera_id"]
+                    alert["camera_name"] = row["camera_name"] or row["camera_id"]
+                    alert["zone_name"] = row["zone_name"]
+            except Exception:
+                pass
+        return alert
 
     def get_alert_by_id(self, db_conn: sqlite3.Connection, alert_id: str) -> dict[str, Any] | None:
         """Fetch alert row by id."""
         row = db_conn.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,)).fetchone()
-        return dict(row) if row else None
+        return self._enrich_alert(dict(row), db_conn) if row else None
 
     def get_alerts(
         self,
@@ -221,7 +260,7 @@ class AlertService:
         params.append(limit)
 
         rows = db_conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
+        return [self._enrich_alert(dict(r), db_conn) for r in rows]
 
     def expire_alerts(self, now_ms: int, db_conn: sqlite3.Connection) -> list[str]:
         """Find and expire alerts past their TTL."""
@@ -301,13 +340,16 @@ class AlertService:
     def raise_camera_offline(
         self,
         camera_id: str,
-        camera_name: str,
+        camera_name: str | None,
         now_ms: int,
         db_conn: sqlite3.Connection
     ) -> dict[str, Any]:
         """Raise medium camera_offline alert."""
+        name = camera_name
+        if not name or name == camera_id:
+            name = self._resolve_camera_name(camera_id, db_conn)
         time_str = format_local_time(now_ms)
-        message = f"{camera_name} offline since {time_str}"
+        message = f"{name} offline since {time_str}"
         return self.create_alert(
             db_conn=db_conn,
             level="medium",
@@ -361,10 +403,12 @@ class AlertService:
         camera_id: str,
         gap_s: float,
         now_ms: int,
-        db_conn: sqlite3.Connection
+        db_conn: sqlite3.Connection,
+        camera_name: str | None = None
     ) -> dict[str, Any]:
         """Raise medium recording_gap alert."""
-        message = f"Recording gap detected on {camera_id} ({gap_s:.1f}s)"
+        name = camera_name or self._resolve_camera_name(camera_id, db_conn)
+        message = f"Recording gap detected on {name} ({gap_s:.1f}s)"
         return self.create_alert(
             db_conn=db_conn,
             level="medium",

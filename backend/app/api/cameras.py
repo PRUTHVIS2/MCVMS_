@@ -14,6 +14,7 @@ from app.core.clock import Clock
 from app.core.db import get_db
 from app.core.security import decrypt_url, encrypt_url
 from app.models.user import UserOut
+from app.services.mediamtx import mediamtx_service, sanitize_path_name
 
 router = APIRouter(prefix="/cameras", tags=["cameras"])
 logger = logging.getLogger(__name__)
@@ -116,12 +117,13 @@ def get_stream_info(
     if not row:
         raise HTTPException(status_code=404, detail="Camera not found")
     name = row["name"]
+    path_name = sanitize_path_name(name)
     return StreamInfoOut(
         camera_id=row["id"],
         name=name,
         status=row["status"],
-        webrtc_url=f"http://localhost:8889/{name}/whep",
-        hls_url=f"http://localhost:8888/{name}/index.m3u8",
+        webrtc_url=f"http://localhost:8889/{path_name}/whep",
+        hls_url=f"http://localhost:8888/{path_name}/index.m3u8",
         width=row["width"],
         height=row["height"],
         fps=row["fps"]
@@ -149,6 +151,9 @@ def create_camera(
         "INSERT INTO cameras (id, name, rtsp_url_enc, enabled, features_json, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (cam_id, cam.name, enc_url, 1, features_json, "unknown", Clock().now_ms())
     )
+
+    # Sync external camera path with MediaMTX for WebRTC / HLS
+    mediamtx_service.sync_camera(cam.name, cam.rtsp_url)
 
     log_audit(
         user_id=current_user.id,
@@ -198,6 +203,15 @@ def update_camera(
         (new_name, new_rtsp_enc, new_features, new_enabled, cam_id)
     )
 
+    # Sync MediaMTX path
+    if update.name is not None and update.name != row["name"]:
+        mediamtx_service.remove_camera(row["name"])
+    raw_rtsp = update.rtsp_url if update.rtsp_url is not None else decrypt_url(row["rtsp_url_enc"])
+    if new_enabled:
+        mediamtx_service.sync_camera(new_name, raw_rtsp)
+    else:
+        mediamtx_service.remove_camera(new_name)
+
     from app.pipeline.camera_runtime import reload_camera_rules
     reload_camera_rules(cam_id, db)
 
@@ -241,6 +255,7 @@ def delete_camera(
         unregister_runtime(cam_id)
 
     # Delete dependent relations
+    mediamtx_service.remove_camera(row["name"])
     zone_ids = [z["id"] for z in db.execute("SELECT id FROM zones WHERE camera_id = ?", (cam_id,)).fetchall()]
     for zid in zone_ids:
         db.execute("DELETE FROM registered_actions WHERE zone_id = ?", (zid,))

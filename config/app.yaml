@@ -16,6 +16,8 @@ identity: {}
 review: {}
 clips:
   segment_gap_tolerance_ms: 2500  # Tolerance (ms) for keyframe/GOP interval variance between continuous segments
+  retry_limit: 5  # Max retry attempts for incomplete clips until covering segments exist
+  retry_interval_s: 5.0  # Periodic retry interval (seconds)
 id_check: {}
 rules: {}
 training: {}

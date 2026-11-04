@@ -4,8 +4,8 @@ import { LoginPage } from './LoginPage';
 import * as AuthContext from '../../context/AuthContext';
 
 describe('LoginPage Component', () => {
-  it('displays specific error message when login fails due to incorrect password', async () => {
-    const mockLogin = vi.fn().mockRejectedValue(new Error('Incorrect password'));
+  it('displays generic error message when login fails due to incorrect password', async () => {
+    const mockLogin = vi.fn().mockRejectedValue(new Error('Incorrect username or password'));
 
     vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
       user: null,
@@ -24,12 +24,12 @@ describe('LoginPage Component', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('login-error-alert')).toBeInTheDocument();
-      expect(screen.getByText('Incorrect password')).toBeInTheDocument();
+      expect(screen.getByText('Incorrect username or password')).toBeInTheDocument();
     });
   });
 
-  it('displays specific error message when user does not exist', async () => {
-    const mockLogin = vi.fn().mockRejectedValue(new Error('User does not exist'));
+  it('displays generic error message without enumerating user when user does not exist', async () => {
+    const mockLogin = vi.fn().mockRejectedValue(new Error('Incorrect username or password'));
 
     vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
       user: null,
@@ -48,7 +48,7 @@ describe('LoginPage Component', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('login-error-alert')).toBeInTheDocument();
-      expect(screen.getByText('User does not exist')).toBeInTheDocument();
+      expect(screen.getByText('Incorrect username or password')).toBeInTheDocument();
     });
   });
 });

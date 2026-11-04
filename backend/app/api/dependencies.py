@@ -10,13 +10,18 @@ from app.core.db import get_db
 from app.core.security import decode_access_token
 from app.models.user import UserOut
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login", auto_error=False)
 
 def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
+    request: Request,
+    token: Annotated[str | None, Depends(oauth2_scheme)],
     db: Annotated[sqlite3.Connection, Depends(get_db)]
 ) -> UserOut:
-    payload = decode_access_token(token)
+    raw_token = token or request.cookies.get("access_token") or request.query_params.get("token")
+    if not raw_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    payload = decode_access_token(raw_token)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     

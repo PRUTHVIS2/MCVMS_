@@ -622,6 +622,44 @@ def test_system_alerts_lifecycle():
     assert "12.5s" in gap_alerts[0]["message"]
 
 
+def test_system_alerts_use_camera_name_in_message():
+    """System alerts must use human-readable camera name in message text, keeping ID only in target_id."""
+    conn = get_connection()
+    alert_service = AlertService()
+    now_ms = 1793578670000
+
+    raw_cam_id = "01M6FERKX86J00MRA6R8Y7MVYB"
+    cam_name = "South Exit Gate"
+
+    # Insert test camera
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO cameras (id, name, rtsp_url_enc, enabled, features_json, status, created_at)
+        VALUES (?, ?, 'enc', 1, '{"vehicles": true, "id_check": false}', 'online', ?)
+        """,
+        (raw_cam_id, cam_name, now_ms)
+    )
+    conn.commit()
+
+    # 1. Camera offline alert
+    alert_offline = alert_service.raise_camera_offline(raw_cam_id, cam_name, now_ms, conn)
+    assert raw_cam_id not in alert_offline["message"]
+    assert cam_name in alert_offline["message"]
+    assert alert_offline["target_id"] == raw_cam_id
+
+    # Also test when camera_name is not provided or equals camera_id (e.g. from monitor)
+    alert_offline_auto = alert_service.raise_camera_offline(raw_cam_id, raw_cam_id, now_ms + 1000, conn)
+    assert raw_cam_id not in alert_offline_auto["message"]
+    assert cam_name in alert_offline_auto["message"]
+    assert alert_offline_auto["target_id"] == raw_cam_id
+
+    # 2. Recording gap alert
+    alert_gap = alert_service.raise_recording_gap(raw_cam_id, 14.2, now_ms, conn)
+    assert raw_cam_id not in alert_gap["message"]
+    assert cam_name in alert_gap["message"]
+    assert alert_gap["target_id"] == raw_cam_id
+
+
 def test_hot_reload_pipeline():
     """Hot reload replaces compiled rules and zones dynamically."""
     cam_id = "cam01"

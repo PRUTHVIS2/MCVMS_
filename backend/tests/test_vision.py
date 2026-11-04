@@ -151,3 +151,89 @@ def test_analyzer_slow_consumer():
     assert time.time() - start < 1.0 # The analyzer thread shouldn't be blocked by 0.6s total sleep
     # Because maxsize=1, and frames arrive instantly, we probably drop frames.
     assert len(results) < 3
+
+
+def test_class_map_stub():
+    """Test class map with a stub model:
+    - Every mapped class ID exists in model's names.
+    - Unmapped classes are ignored, not silently assigned.
+    - Does not need GPU or real weights.
+    """
+    import threading
+    from app.config import config
+
+    # Stub model simulating the retrained detector's names
+    stub_names = {
+        0: 'person',
+        1: 'bicycle',
+        2: 'motorcycle',
+        3: 'auto_rickshaw',
+        4: 'car',
+        5: 'bus',
+        6: 'truck'
+    }
+
+    # Class map under test: either configured or target approved mapping
+    cfg_class_map = config.models.get("class_map") or {
+        0: "person",
+        2: "two_wheeler",
+        3: "auto_rickshaw",
+        4: "car",
+        5: "bus",
+        6: "truck",
+    }
+    assert len(cfg_class_map) > 0, "class_map should not be empty"
+    for cls_id, category in cfg_class_map.items():
+        assert int(cls_id) in stub_names, f"Mapped class id {cls_id} not found in model names {stub_names}"
+        assert category in ["person", "two_wheeler", "auto_rickshaw", "car", "bus", "truck"]
+
+    # Unmapped class (e.g., 1: bicycle) should not be in the configured class map
+    assert 1 not in [int(k) for k in cfg_class_map.keys()], "Class 1 (bicycle) should be ignored per approved configuration"
+
+    # Create detector instance with stub model (no GPU or real weights needed)
+    det = Detector.__new__(Detector)
+    det.imgsz = 640
+    det._lock = threading.Lock()
+    det.model_path = "stub_model.pt"
+    det.class_map = {int(k): str(v) for k, v in cfg_class_map.items()}
+
+    mock_model = MagicMock()
+    mock_model.names = stub_names
+    det.model = mock_model
+
+    # Simulate inference output containing:
+    # - Mapped classes: 0 (person), 2 (motorcycle -> two_wheeler), 3 (auto_rickshaw), 4 (car), 5 (bus), 6 (truck)
+    # - Unmapped classes: 1 (bicycle), 99 (unknown class)
+    class MockBox:
+        def __init__(self, cls, conf, xyxy):
+            self.cls = torch.tensor([cls])
+            self.conf = torch.tensor([conf])
+            self.xyxy = torch.tensor([xyxy])
+
+    class MockResult:
+        def __init__(self):
+            self.boxes = [
+                MockBox(0, 0.95, [0, 0, 10, 10]),   # person -> mapped
+                MockBox(1, 0.90, [0, 0, 10, 10]),   # bicycle -> unmapped / ignored
+                MockBox(2, 0.92, [0, 0, 10, 10]),   # motorcycle -> mapped to two_wheeler
+                MockBox(3, 0.88, [0, 0, 10, 10]),   # auto_rickshaw -> mapped to auto_rickshaw
+                MockBox(4, 0.91, [0, 0, 10, 10]),   # car -> mapped to car
+                MockBox(5, 0.89, [0, 0, 10, 10]),   # bus -> mapped to bus
+                MockBox(6, 0.87, [0, 0, 10, 10]),   # truck -> mapped to truck
+                MockBox(99, 0.99, [0, 0, 10, 10]),  # unknown -> unmapped / ignored
+            ]
+            self.keypoints = None
+
+    mock_model.predict.return_value = [MockResult()]
+
+    frame = np.zeros((640, 640, 3), dtype=np.uint8)
+    detections = det.detect(frame)
+
+    # Exactly 6 mapped detections, unmapped 1 and 99 are ignored
+    assert len(detections) == 6
+    assert detections[0].cls == "person"
+    assert detections[1].cls == "two_wheeler"
+    assert detections[2].cls == "auto_rickshaw"
+    assert detections[3].cls == "car"
+    assert detections[4].cls == "bus"
+    assert detections[5].cls == "truck"

@@ -42,10 +42,18 @@ def get_connection() -> sqlite3.Connection:
 
 def get_db() -> Generator[sqlite3.Connection, None, None]:
     conn = get_connection()
-    try:
+    started_tx = False
+    if not conn.in_transaction:
         conn.execute("BEGIN")
+        started_tx = True
+    try:
         yield conn
-        conn.commit()
+        if started_tx and conn.in_transaction:
+            conn.commit()
     except Exception:
-        conn.rollback()
+        if conn.in_transaction:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         raise

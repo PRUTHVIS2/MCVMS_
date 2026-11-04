@@ -53,10 +53,11 @@ export const CameraTile: React.FC<CameraTileProps> = ({ camera, isFocused = fals
     }
 
     let isCancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const videoEl = videoRef.current;
 
     const setupStream = async () => {
-      setStreamError(false);
+      if (isCancelled) return;
       try {
         const info = await api.getStreamInfo(camera.id);
         if (isCancelled) return;
@@ -71,9 +72,35 @@ export const CameraTile: React.FC<CameraTileProps> = ({ camera, isFocused = fals
 
             pc.addTransceiver('video', { direction: 'recvonly' });
 
+            pc.onconnectionstatechange = () => {
+              if (
+                pc.connectionState === 'disconnected' ||
+                pc.connectionState === 'failed' ||
+                pc.connectionState === 'closed'
+              ) {
+                if (!isCancelled) {
+                  setStreamError(true);
+                  setActiveTracks([]);
+                  if (camera.status === 'online' && !retryTimer) {
+                    retryTimer = setTimeout(() => {
+                      retryTimer = null;
+                      setupStream();
+                    }, 3000);
+                  }
+                }
+              }
+            };
+
             pc.ontrack = (event) => {
               if (videoEl && event.streams[0]) {
                 videoEl.srcObject = event.streams[0];
+                setStreamError(false);
+                videoEl.onerror = () => {
+                  if (!isCancelled) {
+                    setStreamError(true);
+                    setActiveTracks([]);
+                  }
+                };
                 videoEl.play().catch(() => {});
               }
             };
@@ -91,6 +118,7 @@ export const CameraTile: React.FC<CameraTileProps> = ({ camera, isFocused = fals
               const answerSdp = await res.text();
               if (!isCancelled && pc.signalingState !== 'closed') {
                 await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+                setStreamError(false);
                 return;
               }
             }
@@ -109,6 +137,12 @@ export const CameraTile: React.FC<CameraTileProps> = ({ camera, isFocused = fals
         if (!isCancelled) {
           setStreamError(true);
           setActiveTracks([]);
+          if (camera.status === 'online' && !retryTimer) {
+            retryTimer = setTimeout(() => {
+              retryTimer = null;
+              setupStream();
+            }, 3000);
+          }
         }
       }
     };
@@ -117,6 +151,7 @@ export const CameraTile: React.FC<CameraTileProps> = ({ camera, isFocused = fals
 
     return () => {
       isCancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
         peerConnectionRef.current = null;

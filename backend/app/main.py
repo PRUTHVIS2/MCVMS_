@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 
 import ulid
@@ -14,11 +15,13 @@ from app.api import (
     calendar,
     cameras,
     events,
+    system,
     templates,
     users,
     ws,
     zones,
 )
+from app.config import config
 from app.core.clock import Clock
 from app.core.db import get_connection
 from app.core.health import get_health_status
@@ -34,6 +37,7 @@ from app.recorder.clipper import Clipper
 from app.recorder.ffmpeg_recorder import FFmpegRecorder
 from app.services.alerts import AlertService
 from app.services.events import EventService
+from app.services.mediamtx import mediamtx_service
 from app.sources.rtsp import RTSPSource
 from app.tools.migrate import migrate
 from app.vision.detector import Detector
@@ -57,6 +61,7 @@ shared_detector: Detector | None = None
 async def camera_monitor():
     global shared_detector
     clock = Clock()
+    last_repair_ts = 0.0
     while True:
         try:
             conn = get_connection()
@@ -171,9 +176,18 @@ async def camera_monitor():
                     })
 
                     if new_status == "offline":
-                        alert_service.raise_camera_offline(cam_id, cam_id, now_ms, conn)
+                        alert_service.raise_camera_offline(cam_id, cam["name"], now_ms, conn)
                     elif new_status == "online":
                         alert_service.clear_camera_offline(cam_id, conn)
+
+            # Periodic check to complete/repair pending and incomplete clips
+            now_sec = time.time()
+            if now_sec - last_repair_ts >= float(config.clips.get("retry_interval_s", 5.0)):
+                last_repair_ts = now_sec
+                try:
+                    clipper.repair_all_pending(conn)
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"Periodic clip repair error: {e}")
         except Exception as e:  # noqa: BLE001
             logger.error(f"Monitor error: {type(e).__name__}: {e}", exc_info=True)
         await asyncio.sleep(1)
@@ -206,6 +220,9 @@ async def lifespan(app: FastAPI):
             )
             conn.commit()
             logger.info(f"Bootstrapped default owner: {owner_username}")
+
+        # Sync cameras with MediaMTX proxy
+        mediamtx_service.sync_all_cameras(conn)
 
     # Start monitor
     monitor_task = asyncio.create_task(camera_monitor())
@@ -245,6 +262,7 @@ app.include_router(templates.router, prefix="/api/v1")
 app.include_router(calendar.router, prefix="/api/v1")
 app.include_router(events.router, prefix="/api/v1")
 app.include_router(alerts.router, prefix="/api/v1")
+app.include_router(system.router, prefix="/api/v1")
 app.include_router(ws.router)
 
 

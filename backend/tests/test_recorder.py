@@ -816,3 +816,67 @@ def test_checkpoint_round2_ignore_zero_byte_segments(tmp_path):
     found_paths = [str(p.name) for p, _, _ in found]
     assert seg2_name not in found_paths
 
+
+def test_live_event_clip_retry_incomplete_to_ready(tmp_path):
+    """Live event clips cut at event time (window incomplete at ~15s) must retry until full coverage (~35s ready)."""
+    cont_dir = tmp_path / "continuous"
+    clips_dir = tmp_path / "clips"
+    cam_id = "cam_retry_event"
+    cam_dir = cont_dir / cam_id
+    cam_dir.mkdir(parents=True)
+
+    dt0 = datetime(2026, 10, 5, 12, 0, 0, tzinfo=timezone.utc)
+    ms0 = int(dt0.timestamp() * 1000)
+
+    # 1. At event time (t = 15s), only first 15s of footage exists (seg 0..10s and seg 10..15s)
+    seg1_dt = dt0
+    create_synthetic_segment(cam_dir / seg1_dt.strftime("%Y%m%d_%H%M%S.mkv"), duration_s=10.0)
+    seg2_dt = datetime.fromtimestamp((ms0 + 10000) / 1000, tz=timezone.utc)
+    create_synthetic_segment(cam_dir / seg2_dt.strftime("%Y%m%d_%H%M%S.mkv"), duration_s=10.0)
+
+    clipper = Clipper(clips_dir=str(clips_dir), continuous_dir=str(cont_dir))
+
+    # Event starts at 15s, ends at 15s. Pre-roll 15s, hold 20s -> requested window [0, 35s] (duration 35s)
+    req = ClipRequest(
+        kind="event",
+        camera_id=cam_id,
+        start_ts_ms=ms0 + 15000,
+        end_ts_ms=ms0 + 15000,
+        pre_roll_s=15.0,
+        hold_s=20.0,
+        max_clip_min=15.0
+    )
+
+    schema_sql_path = Path(__file__).resolve().parent.parent / "migrations" / "001_initial_schema.sql"
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    with open(schema_sql_path, "r", encoding="utf-8") as f:
+        conn.executescript(f.read())
+
+    # Initial cut at event time: covering segments only reach ~20s, so status is 'incomplete'
+    res = clipper.process_clip_request(req, db_conn=conn, wait_timeout_s=0.5)
+    assert res.status == "incomplete"
+    initial_dur = get_video_duration_ffprobe(Path(res.path))
+    assert initial_dur < 25.0
+
+    # 2. Later, recorder writes subsequent segments covering post-event hold (up to 40s)
+    seg3_dt = datetime.fromtimestamp((ms0 + 20000) / 1000, tz=timezone.utc)
+    create_synthetic_segment(cam_dir / seg3_dt.strftime("%Y%m%d_%H%M%S.mkv"), duration_s=10.0)
+    seg4_dt = datetime.fromtimestamp((ms0 + 30000) / 1000, tz=timezone.utc)
+    create_synthetic_segment(cam_dir / seg4_dt.strftime("%Y%m%d_%H%M%S.mkv"), duration_s=10.0)
+
+    # 3. Retry incomplete clips until covering segments exist
+    repair_res = clipper.repair_clip(res.clip_id, db_conn=conn)
+    assert repair_res is not None
+    assert repair_res.status == "ready"
+    assert "Full coverage" in repair_res.status_reason
+
+    # 4. Check measured duration with ffprobe: must be ~35s
+    probed_dur = get_video_duration_ffprobe(Path(repair_res.path))
+    assert 34.0 <= probed_dur <= 36.0
+
+    # 5. Check DB updated
+    row = conn.execute("SELECT status, duration_s FROM clips WHERE id = ?", (res.clip_id,)).fetchone()
+    assert row["status"] == "ready"
+    assert 34.0 <= row["duration_s"] <= 36.0
+

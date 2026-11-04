@@ -124,6 +124,114 @@ test.describe('MCVMS Frontend Smoke Tests (Mocked Backend)', () => {
         ]),
       });
     });
+
+    // 6. Mock Events endpoints
+    await page.route('**/api/v1/events*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'evt_01',
+            camera_id: 'cam_01',
+            camera_name: 'North Gate Cam',
+            zone_id: 'zone_spec_01',
+            zone_name: 'Loading Bay Zone',
+            severity: 'critical',
+            kind: 'heavy_vehicle',
+            status: 'open',
+            started_at: 1793673891000,
+            ended_at: 1793673926000,
+            subject: { category: 'truck', colour: 'white', plate: 'KA05AB1234' },
+            confidence: 0.94,
+            clip_id: 'clip_01',
+          },
+        ]),
+      });
+    });
+
+    // 7. Mock System endpoints
+    await page.route('**/api/v1/system/health', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'ok',
+          timestamp: 1793673891000,
+          cameras: [
+            {
+              id: 'cam_01',
+              name: 'North Gate Cam',
+              enabled: true,
+              fps: 30,
+              width: 1920,
+              height: 1080,
+              status: 'online',
+              features: { vehicles: true, id_check: false },
+            },
+          ],
+          disk: {
+            total_gb: 500.0,
+            free_gb: 380.0,
+            used_gb: 120.0,
+            percent_used: 24.0,
+            status: 'ok',
+          },
+          gpu: {
+            available: true,
+            device: 'cuda',
+            name: 'NVIDIA GeForce RTX 3080',
+            memory_used_mb: 2150,
+            memory_total_mb: 10240,
+          },
+          decode_errors: { cam_01: 0 },
+        }),
+      });
+    });
+
+    await page.route('**/api/v1/system/config-summary', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          app: { timezone: 'Asia/Kolkata', mode: 'live', device: 'cuda' },
+          model: { weights: 'yolo11n.pt', tracker: 'bytetrack.yaml' },
+          heavy_categories: ['truck', 'bus'],
+          clips: { retry_limit: 5, retry_interval_s: 5.0, segment_gap_tolerance_ms: 2500 },
+          retention: { video_days: 7 },
+        }),
+      });
+    });
+
+    // 8. Mock Users and Audit endpoints
+    await page.route('**/api/v1/users*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { id: 'u1', username: 'admin', role: 'owner', active: true, cameras: [], created_at: 1793673891000 },
+          { id: 'u2', username: 'guard1', role: 'guard', active: true, cameras: ['cam_01'], created_at: 1793673891000 },
+        ]),
+      });
+    });
+
+    await page.route('**/api/v1/audit*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 1,
+            ts: 1793673891000,
+            user_id: 'u1',
+            username: 'admin',
+            action: 'user.login',
+            target: 'auth',
+            detail: { ip: '127.0.0.1' },
+          },
+        ]),
+      });
+    });
   });
 
   test('login and render live wall with camera status and overlay', async ({ page }) => {
@@ -170,6 +278,86 @@ test.describe('MCVMS Frontend Smoke Tests (Mocked Backend)', () => {
     await page.click('button[aria-label="Alerts"]');
     await expect(page.getByText('System Alerts')).toBeVisible();
     await expect(page.getByText('Heavy vehicle in Loading Bay Zone')).toBeVisible();
+  });
+
+  test('events review, clip player with 15s pre-roll trigger marker, and drawer interaction', async ({ page }) => {
+    await page.goto('/');
+    await page.fill('input#username', 'admin');
+    await page.fill('input#password', 'adminpass');
+    await page.click('button[type="submit"]');
+
+    // Navigate to Events Page
+    await page.click('button:has-text("Events")');
+    await expect(page.getByText('Timestamp (IST)')).toBeVisible();
+
+    // Verify Event Row
+    const eventRow = page.getByTestId('event-row-evt_01');
+    await expect(eventRow).toBeVisible();
+    await expect(eventRow.getByText('North Gate Cam')).toBeVisible();
+    await expect(eventRow.getByText('heavy vehicle')).toBeVisible();
+    await expect(eventRow.getByText(/KA05AB1234/)).toBeVisible();
+
+    // Open Event Detail Drawer
+    await eventRow.click();
+    await expect(page.getByTestId('event-detail-drawer')).toBeVisible();
+    await expect(page.getByTestId('event-clip-player')).toBeVisible();
+    await expect(page.getByText(/Trigger Point: 15s/i)).toBeVisible();
+
+    // Verify Subject Attributes card
+    const drawer = page.getByTestId('event-detail-drawer');
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByText('KA05AB1234')).toBeVisible();
+    await expect(drawer.getByRole('button', { name: 'Acknowledge' })).toBeVisible();
+    await expect(drawer.getByRole('button', { name: 'Mark False Alarm' })).toBeVisible();
+  });
+
+  test('system health diagnostics, active model and accuracy constraints', async ({ page }) => {
+    await page.goto('/');
+    await page.fill('input#username', 'admin');
+    await page.fill('input#password', 'adminpass');
+    await page.click('button[type="submit"]');
+
+    // Navigate to System Page
+    await page.click('button:has-text("System")');
+    await expect(page.getByRole('heading', { name: 'System Health & Metrics' })).toBeVisible();
+
+    // Verify Top Stat Cards
+    await expect(page.getByText('Storage & Data Disk')).toBeVisible();
+    await expect(page.getByText('380 GB')).toBeVisible();
+    await expect(page.getByText('NVIDIA GeForce RTX 3080')).toBeVisible();
+
+    // Verify Configuration Summary
+    await expect(page.getByText('Configuration Summary')).toBeVisible();
+    await expect(page.getByText('yolo11n.pt')).toBeVisible();
+
+    // Verify "About accuracy" limitations from docs/01 s6
+    await expect(page.getByTestId('about-accuracy-section')).toBeVisible();
+    await expect(page.getByText(/1\. Licence Plates/i)).toBeVisible();
+    await expect(page.getByText(/2\. Vehicle Colour/i)).toBeVisible();
+    await expect(page.getByText(/3\. Heavy Vehicle Heuristic/i)).toBeVisible();
+    await expect(page.getByText(/4\. ID-Card Physical Visibility/i)).toBeVisible();
+    await expect(page.getByText(/5\. No Identity Guessing/i)).toBeVisible();
+    await expect(page.getByText(/6\. Appearance Matching/i)).toBeVisible();
+  });
+
+  test('user management and audit log feed for owner', async ({ page }) => {
+    await page.goto('/');
+    await page.fill('input#username', 'admin');
+    await page.fill('input#password', 'adminpass');
+    await page.click('button[type="submit"]');
+
+    // Navigate to Users & Audit Page
+    await page.click('button:has-text("Users & Audit")');
+    await expect(page.getByText('User Management')).toBeVisible();
+    await expect(page.getByText('Add New User')).toBeVisible();
+
+    // Check user table
+    await expect(page.getByText('guard1')).toBeVisible();
+
+    // Switch to Audit Log tab
+    await page.click('button:has-text("Audit Log Feed")');
+    await expect(page.getByText('user.login')).toBeVisible();
+    await expect(page.getByText(/127\.0\.0\.1/)).toBeVisible();
   });
 });
 

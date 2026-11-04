@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { AlertBell } from '../alerts/AlertBell';
+import { AlertsPage } from '../alerts/AlertsPage';
+import { EventsPage } from '../events/EventsPage';
+import { SystemPage } from '../system/SystemPage';
+import { UsersAuditPage } from '../system/UsersAuditPage';
 import { LiveWall } from '../wall/LiveWall';
 import type { Role } from '../../types';
 
@@ -38,7 +42,6 @@ const NAV_ITEMS: NavItem[] = [
     id: 'events',
     label: 'Events & Clips',
     allowedRoles: ['owner', 'admin', 'incharge'],
-    stepBadge: 'Step 9',
     icon: (props) => (
       <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -50,7 +53,6 @@ const NAV_ITEMS: NavItem[] = [
     id: 'alerts',
     label: 'Alerts',
     allowedRoles: ['owner', 'admin', 'incharge'],
-    stepBadge: 'Step 9',
     icon: (props) => (
       <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -106,7 +108,6 @@ const NAV_ITEMS: NavItem[] = [
     id: 'system',
     label: 'System Health',
     allowedRoles: ['owner', 'admin', 'incharge'],
-    stepBadge: 'Step 20',
     icon: (props) => (
       <svg {...props} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -267,33 +268,41 @@ export const AppShell: React.FC = () => {
         {/* Content Area */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-6 bg-slate-950">
           {activePage === 'wall' && <LiveWall />}
+          {activePage === 'events' && <EventsPage />}
+          {activePage === 'alerts' && <AlertsPage />}
+          {activePage === 'system' && <SystemPage />}
+          {activePage === 'users' && <UsersAuditPage />}
 
-          {activePage !== 'wall' && (
-            <div className="flex flex-col items-center justify-center p-12 bg-slate-900/50 border border-slate-800 rounded-2xl text-center min-h-[400px]">
-              <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center text-amber-400 mb-3 border border-slate-700">
-                <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                </svg>
+          {activePage !== 'wall' &&
+            activePage !== 'events' &&
+            activePage !== 'alerts' &&
+            activePage !== 'system' &&
+            activePage !== 'users' && (
+              <div className="flex flex-col items-center justify-center p-12 bg-slate-900/50 border border-slate-800 rounded-2xl text-center min-h-[400px]">
+                <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center text-amber-400 mb-3 border border-slate-700">
+                  <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-white">
+                  {NAV_ITEMS.find((n) => n.id === activePage)?.label}
+                </h3>
+                <p className="text-xs text-slate-400 max-w-md mt-2 leading-relaxed">
+                  This module will be activated in{' '}
+                  <span className="text-amber-400 font-semibold font-mono">
+                    {NAV_ITEMS.find((n) => n.id === activePage)?.stepBadge || 'an upcoming step'}
+                  </span>{' '}
+                  of PLAN.md. Use the <strong className="text-slate-200">Live Wall</strong> to monitor real-time video streams, zone boundaries, and detections.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActivePage('wall')}
+                  className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-semibold rounded-lg border border-slate-700 transition-colors"
+                >
+                  Return to Live Wall
+                </button>
               </div>
-              <h3 className="text-lg font-semibold text-white">
-                {NAV_ITEMS.find((n) => n.id === activePage)?.label}
-              </h3>
-              <p className="text-xs text-slate-400 max-w-md mt-2 leading-relaxed">
-                This module will be activated in{' '}
-                <span className="text-amber-400 font-semibold font-mono">
-                  {NAV_ITEMS.find((n) => n.id === activePage)?.stepBadge || 'an upcoming step'}
-                </span>{' '}
-                of PLAN.md. Use the <strong className="text-slate-200">Live Wall</strong> to monitor real-time video streams, zone boundaries, and detections.
-              </p>
-              <button
-                type="button"
-                onClick={() => setActivePage('wall')}
-                className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-semibold rounded-lg border border-slate-700 transition-colors"
-              >
-                Return to Live Wall
-              </button>
-            </div>
-          )}
+            )}
         </main>
       </div>
     </div>

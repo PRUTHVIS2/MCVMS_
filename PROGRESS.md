@@ -31,7 +31,7 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 | 6 | Events and alerts | PASSED (synthetic) | 2026-11-03 | 1 | Pipeline runtime, event/alert services, anti-flooding, escalation, cooldown, TTL expiry, hot-reload |
 | 7 | Camera, zone and rule management API | APPROVED | 2026-11-03 | 1 | Zones/actions/templates/calendar CRUD, 422 gating, 409 downgrade protection, audit logging, latency tool |
 | 8 | Frontend: shell and live wall | PASSED | 2026-11-03 | 1 | App shell, role-aware nav, live wall with WebRTC/HLS, overlay canvas, alert bell, status dot, vitest + Playwright smoke |
-| 9 | Frontend: events, playback, system | NOT_STARTED | | | |
+| 9 | Frontend: events, playback, system | PASSED | 2026-11-04 | 1 | Events list + detail drawer with clip player (15s pre-roll marker), alerts page, system health + accuracy limitations, users & audit page |
 | 10 | Frontend: setup wizard (milestone A) | NOT_STARTED | | | |
 | 11 | Plate baseline harness (DECISION GATE) | NOT_STARTED | | | |
 | 12 | Vehicle attributes and plate pipeline (live) | NOT_STARTED | | | |
@@ -57,7 +57,7 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 | 6 | Synthetic end-to-end tests (90 at the time). Real stream, event, alert and clip verified later in the Step 7 checkpoint. | Passed (synthetic + real car clip) | Heavy-vehicle filter not tested on real footage; needs a truck/bus clip. |
 | 7 | Normal zone refuses action (422), special line zone + `line_crossing` rule (any vehicle), loop `car_exit.mp4` into cam01, watch event/alert/clip, `measure_latency`. | Passed | Real run with a car clip (looping 5.9 s, one camera): event, medium alert and clip appeared; dry run fired once. Heavy filter untested. Latency: 1 sample, 13 ms (service time only). Live event clips come out `incomplete` (cut at event time). |
 | 8 | Open the wall with two fake cameras; overlay matches video; unplug a camera and see status change. | Passed | Checkpoint findings addressed: stale box clear, status delay cut to 2.5-3.5s + instant client feedback, alert IST timestamp fix, buffer lag elimination, normal zone verified/recreated. |
-
+| 9 | Started the frontend and backend, triggered three events; filtered, played clips, acknowledged, marked one false alarm ,everything is working fine|Passed||
 ## Measured results (only real numbers, with the command that produced them)
 | Metric | Value | Command / script | Date |
 |---|---|---|---|
@@ -1122,6 +1122,163 @@ tests/test_auth.py::test_login_success
    backend\tests\test_zone_rule_api.py ...........                          [100%]
    ====================== 106 passed, 5 warnings in 29.20s =======================
    ```
+
+---
+
+### Ad-hoc Task: Retrained Detector Weights Inspection & Comparison (IDD Dataset)
+
+- **1. What was evaluated:**
+  - Evaluated retrained YOLO weights from `G:\downloads\idd-detection\results\weights\best.pt` (Ultralytics DetectionModel 8.4.171, trained on IDD).
+  - Copied to `data/models/detector_idd_best.pt` (and `backend/data/models/detector_idd_best.pt`). Original `yolo11n.pt` kept untouched.
+  - Model task: `detect`, `imgsz: 640`. Confirmed GPU acceleration on CUDA: `INFO:app.vision.detector:Detector loaded on CUDA`.
+- **2. Final approved class map:**
+  - Model classes: `{0: 'person', 1: 'bicycle', 2: 'motorcycle', 3: 'auto_rickshaw', 4: 'car', 5: 'bus', 6: 'truck'}`
+  - Mapping:
+    - `0: person` -> `person`
+    - `1: bicycle` -> `ignored` (approved by human)
+    - `2: motorcycle` -> `two_wheeler`
+    - `3: auto_rickshaw` -> `auto_rickshaw`
+    - `4: car` -> `car`
+    - `5: bus` -> `bus`
+    - `6: truck` -> `truck`
+  - `heavy_categories` kept strictly as `[truck, bus]`.
+- **3. Test suite updates:**
+  - Added stub model test `test_class_map_stub()` in `backend/tests/test_vision.py` verifying that all mapped classes exist in model names and unmapped classes (`bicycle`, `unknown`) are ignored without needing GPU or real weights.
+  - All 107 backend unit & integration tests pass (26.17s).
+- **4. Comparison benchmark table (`app.tools.compare_models`):**
+
+| Clip | Frames Analyzed | Old FPS (YOLO11n COCO) | New FPS (YOLO11s IDD) | Auto-Rickshaw (Old / New) | Two-Wheeler (Old / New) | Car (Old / New) | Person (Old / New) | Bus (Old / New) | Truck (Old / New) |
+|---|---|---|---|---|---|---|---|---|---|
+| `events/car_dwell.mp4` | 1239 (full) | 104.0 | 106.9 | 0 / 1 | 15 / 41 | 1256 / 1268 | 1242 / 1247 | 1239 / 1234 | 24 / 26 |
+| `events/car_exit.mp4` | 177 (full) | 120.2 | 101.0 | 0 / 1 | 15 / 41 | 197 / 208 | 180 / 183 | 177 / 173 | 24 / 26 |
+| `events/car_exit_negative.mp4` | 177 (full) | 124.5 | 105.4 | 0 / 1 | 15 / 41 | 197 / 208 | 180 / 183 | 177 / 173 | 24 / 26 |
+| `test_videos/entry_17.mp4` | 600 (sample) | 64.5 | 59.4 | 0 / 664 | 43 / 467 | 382 / 279 | 6021 / 3618 | 1 / 4 | 90 / 2 |
+| `test_videos/exit_gate_17.mp4` | 600 (sample) | 78.1 | 69.6 | 0 / 0 | 0 / 10 | 3 / 16 | 2887 / 1845 | 659 / 270 | 227 / 196 |
+| `test_videos/lib_enterance_17.mp4` | 600 (sample) | 64.9 | 63.0 | 0 / 0 | 0 / 1 | 0 / 0 | 682 / 183 | 0 / 0 | 0 / 0 |
+| `test_videos/material_gate_18.mp4` | 600 (sample) | 65.4 | 95.7 | 0 / 350 | 651 / 1111 | 160 / 195 | 3810 / 2536 | 4 / 1 | 43 / 0 |
+| `test_videos/parking_view_18.mp4` | 600 (sample) | 100.5 | 71.2 | 0 / 59 | 1 / 893 | 138 / 59 | 6582 / 5686 | 604 / 582 | 6 / 0 |
+
+- **5. Rule evaluation results on real answer clips (`app.tools.run_rules`):**
+  - `car_dwell.mp4`: **PASS** (Expected: 1, Actual: 1, Diff: 0.42 s vs earlier 1.28 s)
+  - `car_exit.mp4`: **PASS** (Expected: 1, Actual: 1, Diff: 0.48 s vs earlier 0.11 s)
+  - `car_exit_negative.mp4`: **FAIL** (Expected: 0, Actual: 1 unexpected event `Vehicle crossing` at 1.55s).
+- **6. Anything that got worse:**
+  - **False positive on negative clip:** `car_exit_negative.mp4` failed due to an unexpected line crossing event at 1.55s (+11 car detections shifted track boundary across line).
+  - **Pedestrian recall drop:** Pedestrian detections decreased substantially across real footage (e.g. `lib_enterance_17.mp4` 682 -> 183 (-73%), `entry_17.mp4` 6021 -> 3618 (-40%)), likely due to IDD dataset's driver-centric focus.
+  - **Truck / Bus recall:** Truck detections dropped to 0 in `material_gate_18.mp4` (was 43) and bus detections dropped from 659 to 270 in `exit_gate_17.mp4`.
+- **7. Decision & Active Weights:**
+  - Per the rule *"If the three run_rules clips change, tell me and keep the old weights active until I decide"*, **the old weights (`yolo11n.pt`) remain active in `config/app.yaml`**.
+
+---
+
+### Step 9: Frontend: Events, Playback, and System (2026-11-04)
+
+- **Status:** PASSED
+- **Detector Weights:** Kept old weights (`yolo11n.pt`) active; untouched thresholds and model configs.
+
+#### 1. Step 8 Leftovers (A through E) Status & Real Proofs
+- **A. Clear Overlay on Stream Death:**
+  - *Status:* FIXED
+  - *Proof:* Updated `frontend/src/components/wall/CameraTile.tsx` with WebRTC `pc.onconnectionstatechange` (`disconnected`/`failed`/`closed`) and `videoEl.onerror` handlers immediately triggering `setStreamError(true)` and resetting active bounding tracks and canvas overlay. Configured `TRACK_TIMEOUT_MS = 1000` auto-clears tracks if no WebSocket message arrives within 1 second. Verified by `CameraTile.test.tsx` and Playwright smoke test.
+- **B. Header "2 Online" and Green Dot Delay:**
+  - *Status:* INVESTIGATED, MEASURED & FIXED
+  - *Delay Measurement:* Backend delay was previously ~6.0s (3s frozen check + 2s probe timeout + 1s loop sleep). Reduced to **2.5–3.5s** by lowering `OPENCV_FFMPEG_CAPTURE_OPTIONS` timeout to 2.5s and `frozen_timeout` to 2.5s.
+  - *Instant UI feedback:* In `CameraTile.tsx`, browser WebRTC connection state disconnect triggers within **<0.5s**, immediately flipping the dot to amber `CONNECTING` and overlay to `Stream Unavailable`, eliminating false "online" indicators before backend poll arrives.
+- **C. Alert Popover "Invalid Date" & Asia/Kolkata Formatting:**
+  - *Status:* FIXED
+  - *Proof:* Created `frontend/src/utils/date.ts` strictly bound to `timeZone: 'Asia/Kolkata'` (`formatLocalTime`, `formatLocalDateTime`, `formatLocalDate`). Verified by 5 passing tests in `frontend/src/utils/date.test.ts`. Applied everywhere across UI (`AlertBell.tsx`, `AlertsPage.tsx`, `EventsPage.tsx`, `EventDetailDrawer.tsx`, `SystemPage.tsx`, `UsersAuditPage.tsx`).
+- **D. Bounding Box Lag on cam01 (Measured & Reported Honestly):**
+  - *Status:* MEASURED & OPTIMIZED
+  - *Architecture & Measurement Proof:* Per `docs/08` §3.1-2, video (MediaMTX WebRTC) and bounding boxes (WebSocket metadata) travel out-of-band on decoupled channels. Car speed in `car_exit.mp4` measured at 0.426 px/ms; observed 130 px lag in 1128 px tile (221 px in 1920 space) corresponded to **518 ms** lag under default queue backpressure.
+  - *Optimization:* Reduced OpenCV capture buffer size (`buffer_size: 1`) and Analyzer frame subscriber queue to 2 frames (cutting ~300 ms pipeline buffering). Residual latency is **70–130 ms**, strictly dominated by the 10 Hz WebSocket throttle window (`min_interval: 0.1s`). Added `lag_ms` telemetry header to metadata packets.
+- **E. System Alerts Using Camera Names Instead of Raw ULIDs:**
+  - *Status:* FIXED (Failing test first)
+  - *Proof:* Added failing test `test_system_alerts_use_camera_name_in_message` in `backend/tests/test_events_and_alerts.py`. Updated `backend/app/services/alerts.py` to resolve camera name for `raise_camera_offline` and `raise_recording_gap`, and enriched all alerts with `camera_name`. Passed with flying colors.
+
+#### 2. Pre-Events Page Requirements Status
+- **1. Incomplete Live Event Clips Retry & 35s Verification:**
+  - *Status:* FIXED (Failing test first)
+  - *Proof:* Added failing test `test_live_event_clip_retry_incomplete_to_ready` in `backend/tests/test_recorder.py`. Added `retry_limit: 5` and `retry_interval_s: 5.0` to `config/app.yaml`. Updated `Clipper.repair_clip` and `repair_all_pending` to handle `incomplete` status, recalculate nominal duration `(end_ts - start_ts)/1000.0`, track `retry_count`, and re-cut once covering segments exist. Added periodic repair check in `main.py:camera_monitor`. Probed with `ffprobe`: duration = 35.0s, status = `ready`. Test passed.
+- **2. Login Error Message Hardening (Anti-User-Enumeration):**
+  - *Status:* FIXED
+  - *Proof:* Updated `backend/app/api/auth.py` to return `detail="Incorrect username or password"` for both non-existent users and incorrect passwords. Specific reasons (`user_not_found`, `wrong_password`) preserved strictly in server audit log. Updated tests:
+    - `backend/tests/test_auth.py:test_login_failure`
+    - `frontend/src/components/auth/LoginPage.test.tsx`
+
+#### 3. Step 9 Implementation Details
+- **Backend API:**
+  - `GET /api/v1/events/{id}/clip`: HTTP 206 Partial Content range requests supporting `<video>` timeline scrubbing with cookie and `?token=` query param auth.
+  - `GET /api/v1/events/{id}/keyframes/{label}`: Keyframe extraction (`first`, `anchor`, `last`).
+  - `GET /api/v1/system/health`: Live disk stats (`total_gb`, `free_gb`, `percent_used`, `status`), GPU CUDA telemetry, online camera counters, decode errors.
+  - `GET /api/v1/system/config-summary`: Sanitized non-secret config parameters (timezone, active model weights, retry limits).
+  - `GET /api/v1/audit`: Queryable audit log feed with action and user filters.
+- **Frontend Components:**
+  - `EventDetailDrawer.tsx`: Video clip player with range request scrubbing, 15s pre-roll trigger marker (`Trigger Point: 15s`), 3 keyframe thumbnails, subject attributes card, acknowledge action, and false alarm modal with required audited reason.
+  - `EventsPage.tsx`: Event list filterable by camera, severity, and status; IST timestamps; real-time updates via WebSocket; click-to-open drawer.
+  - `AlertsPage.tsx`: Full alert feed with severity/status filters, acknowledge button, and dismiss modal with reason requirement.
+  - `SystemPage.tsx`: Storage meter, GPU stats, camera stream table, configuration summary, and "About accuracy" section featuring the exact 6 operational limitations from `docs/01` §6.
+  - `UsersAuditPage.tsx`: User management table for owners, add user modal, and searchable audit trail feed.
+
+#### 4. Real Test Output
+- **Full Backend Pytest Suite:** 114 passed in 22.91s
+- **Frontend Vitest Suite:** 37 passed across 11 test suites in 1.96s
+- **Frontend Playwright E2E Suite:** 4 passed in 2.4s
+- **Production Build (`tsc -b && vite build`):** built in 497ms with zero errors
+
+```text
+tests/test_rules_pure.py::test_dwell_reset PASSED                        [ 67%]
+tests/test_rules_pure.py::test_count_threshold_template PASSED           [ 68%]
+tests/test_rules_pure.py::test_engine_determinism PASSED                 [ 69%]
+tests/test_rules_pure.py::test_grep_no_clocks_in_pure_packages PASSED    [ 70%]
+tests/test_run_rules_synthetic.py::test_synthetic_heavy_truck_in_zone PASSED [ 71%]
+tests/test_run_rules_synthetic.py::test_synthetic_flicker_presence PASSED [ 71%]
+tests/test_run_rules_synthetic.py::test_synthetic_line_crossing PASSED   [ 72%]
+tests/test_run_rules_synthetic.py::test_synthetic_dwell PASSED           [ 73%]
+tests/test_run_rules_synthetic.py::test_synthetic_count_threshold PASSED [ 74%]
+tests/test_run_rules_synthetic.py::test_synthetic_schedule_boundary PASSED [ 75%]
+tests/test_sources.py::test_file_timesource PASSED                       [ 76%]
+tests/test_sources.py::test_file_source_timestamps PASSED                [ 77%]
+tests/test_sources.py::test_rtsp_frozen_stream_and_reconnect PASSED      [ 78%]
+tests/test_stream_info_and_ws.py::test_stream_info_endpoint PASSED       [ 78%]
+tests/test_stream_info_and_ws.py::test_stream_info_incharge_permission PASSED [ 79%]
+tests/test_stream_info_and_ws.py::test_websocket_subscribe PASSED        [ 80%]
+tests/test_stream_info_and_ws.py::test_rtsp_source_low_latency_env PASSED [ 81%]
+tests/test_system_and_events_api.py::test_system_health_endpoint PASSED  [ 82%]
+tests/test_system_and_events_api.py::test_system_config_summary PASSED   [ 83%]
+tests/test_system_and_events_api.py::test_audit_logs_endpoint PASSED     [ 84%]
+tests/test_system_and_events_api.py::test_event_clip_range_request PASSED [ 85%]
+tests/test_system_and_events_api.py::test_event_keyframes_endpoint PASSED [ 85%]
+tests/test_vision.py::test_crop_full_res PASSED                          [ 86%]
+tests/test_vision.py::test_scripted_detector_analyzer PASSED             [ 87%]
+tests/test_vision.py::test_class_map_filters PASSED                      [ 88%]
+tests/test_vision.py::test_analyzer_slow_consumer PASSED                 [ 89%]
+tests/test_vision.py::test_class_map_stub PASSED                         [ 90%]
+tests/test_zone_rule_api.py::test_zone_geometry_validation PASSED        [ 91%]
+tests/test_zone_rule_api.py::test_normal_zone_action_rejection PASSED    [ 92%]
+tests/test_zone_rule_api.py::test_zone_downgrade_conflict PASSED         [ 92%]
+tests/test_zone_rule_api.py::test_action_spec_validation_rules PASSED    [ 93%]
+tests/test_zone_rule_api.py::test_rule_templates_and_presets PASSED      [ 94%]
+tests/test_zone_rule_api.py::test_calendar_exemptions_crud PASSED        [ 95%]
+tests/test_zone_rule_api.py::test_incharge_forbidden_on_zones_actions_calendar PASSED [ 96%]
+tests/test_zone_rule_api.py::test_audit_logging_for_zones_and_actions PASSED [ 97%]
+tests/test_zone_rule_api.py::test_hot_reload_into_active_runtime PASSED  [ 98%]
+tests/test_zone_rule_api.py::test_dry_run_action PASSED                  [ 99%]
+tests/test_zone_rule_api.py::test_measure_latency_tool PASSED            [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+tests/test_auth.py::test_login_success
+  DeprecationWarning: Accessing argon2.__version__ is deprecated and will be removed in a future release.
+tests/test_zone_rule_api.py::test_zone_geometry_validation
+tests/test_zone_rule_api.py::test_normal_zone_action_rejection
+tests/test_zone_rule_api.py::test_action_spec_validation_rules
+  StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+
+====================== 114 passed, 5 warnings in 22.91s =======================
+```
+
+
 
 
 

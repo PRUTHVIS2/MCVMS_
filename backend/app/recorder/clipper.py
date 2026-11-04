@@ -636,7 +636,7 @@ class Clipper:
             if not clip_row:
                 logger.warning(f"Clip {clip_id} not found in database for repair")
                 return None
-            if clip_row["status"] not in ("needs_repair", "failed"):
+            if clip_row["status"] not in ("needs_repair", "failed", "incomplete"):
                 logger.info(f"Clip {clip_id} does not need repair (status={clip_row['status']})")
                 return None
 
@@ -656,10 +656,18 @@ class Clipper:
         with open(sidecar_path, "r", encoding="utf-8") as f:
             sidecar_data = json.load(f)
 
+        retry_limit = int(config.clips.get("retry_limit", 5))
+        current_retries = sidecar_data.get("retry_count", 0)
+        if clip_row and clip_row["status"] == "incomplete" and current_retries >= retry_limit:
+            logger.info(f"Clip {clip_id} reached retry limit ({retry_limit})")
+            return None
+
         camera_id = sidecar_data["camera_id"]
         start_ts = sidecar_data["start_ts"]
         end_ts = sidecar_data["end_ts"]
-        duration_s = sidecar_data["duration_s"]
+        # Full requested window duration
+        nominal_duration_s = max(0.0, (end_ts - start_ts) / 1000.0)
+        duration_s = nominal_duration_s if nominal_duration_s > 0 else sidecar_data.get("duration_s", 10.0)
         kind = sidecar_data.get("kind", "event")
         final_mp4 = Path(sidecar_data["path"])
 
@@ -670,15 +678,37 @@ class Clipper:
             return None
 
         segments.sort(key=lambda x: x[1])
+        # Refine segment ends using probed duration where available
+        refined_segments = []
+        for p, s_start, s_end in segments:
+            dur = get_video_duration_ffprobe(p)
+            if dur > 0:
+                actual_end = s_start + int(dur * 1000)
+            else:
+                actual_end = s_end
+            refined_segments.append((p, s_start, max(s_end, actual_end)))
+        segments = refined_segments
+
         first_seg_start = segments[0][1]
         latest_seg_end = max(s_end for _, _, s_end in segments)
-        has_segment_gap = any(segments[i + 1][1] > segments[i][2] for i in range(len(segments) - 1))
+        has_segment_gap = any(
+            (segments[i + 1][1] - segments[i][2]) > self.segment_gap_tolerance_ms
+            for i in range(len(segments) - 1)
+        )
 
         if latest_seg_end <= start_ts or first_seg_start >= end_ts:
             logger.info(f"Segments do not overlap clip {clip_id} window")
             return None
 
         is_partial = (first_seg_start > start_ts or latest_seg_end < end_ts or has_segment_gap or (has_gap_fn(start_ts, end_ts) if has_gap_fn else False))
+        
+        # If still incomplete and no additional segments appeared, avoid redundant re-encode
+        if clip_row and clip_row["status"] == "incomplete" and is_partial:
+            sidecar_data["retry_count"] = current_retries + 1
+            with open(sidecar_path, "w", encoding="utf-8") as f:
+                json.dump(sidecar_data, f, indent=2)
+            return None
+
         cut_success = self.cut_clip_from_segments(segments, final_mp4, start_ts, duration_s)
         if not cut_success:
             logger.warning(f"Repair cut failed for clip {clip_id}")
@@ -699,6 +729,7 @@ class Clipper:
         sidecar_data["sha256"] = sha256
         sidecar_data["size_bytes"] = size_bytes
         sidecar_data["key_frames"] = key_frames
+        sidecar_data["retry_count"] = current_retries + 1
         with open(sidecar_path, "w", encoding="utf-8") as f:
             json.dump(sidecar_data, f, indent=2)
 
@@ -738,13 +769,28 @@ class Clipper:
         db_conn: Any,
         has_gap_fn: Optional[Any] = None
     ) -> List[ClipResult]:
-        """Find all clips with status 'needs_repair' and attempt to repair them."""
-        cursor = db_conn.execute("SELECT id FROM clips WHERE status = 'needs_repair'")
+        """Find all clips with status 'needs_repair' or 'incomplete' and attempt to repair/complete them."""
+        cursor = db_conn.execute("SELECT id FROM clips WHERE status IN ('needs_repair', 'incomplete')")
         rows = cursor.fetchall()
         results = []
         for row in rows:
             res = self.repair_clip(row["id"], db_conn=db_conn, has_gap_fn=has_gap_fn)
             if res:
+                results.append(res)
+        return results
+
+    def retry_incomplete_clips(
+        self,
+        db_conn: Any,
+        has_gap_fn: Optional[Any] = None
+    ) -> List[ClipResult]:
+        """Find all clips with status 'incomplete' and retry cutting until full coverage."""
+        cursor = db_conn.execute("SELECT id FROM clips WHERE status = 'incomplete'")
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            res = self.repair_clip(row["id"], db_conn=db_conn, has_gap_fn=has_gap_fn)
+            if res and res.status == "ready":
                 results.append(res)
         return results
 

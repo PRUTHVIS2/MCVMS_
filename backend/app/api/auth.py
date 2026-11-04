@@ -21,7 +21,7 @@ def login(
     user = db.execute("SELECT * FROM users WHERE username = ?", (form_data.username,)).fetchone()
     if not user:
         log_audit(None, "login_failed", form_data.username, {"reason": "user_not_found"})
-        raise HTTPException(status_code=401, detail="User does not exist")
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
 
     if not user["active"]:
         log_audit(user["id"], "login_failed", user["username"], {"reason": "inactive_account"})
@@ -29,7 +29,7 @@ def login(
 
     if not verify_password(form_data.password, user["password_hash"]):
         log_audit(user["id"], "login_failed", user["username"], {"reason": "wrong_password"})
-        raise HTTPException(status_code=401, detail="Incorrect password")
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
     
     token = create_access_token(data={"sub": user["id"], "role": user["role"]})
     log_audit(user["id"], "login_success", user["username"])

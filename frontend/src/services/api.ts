@@ -1,4 +1,4 @@
-import type { Alert, Camera, StreamInfo, User, Zone } from '../types';
+import type { Alert, AuditLogEntry, Camera, EventItem, StreamInfo, SystemHealth, User, Zone } from '../types';
 
 const TOKEN_KEY = 'mcvms_token';
 
@@ -125,6 +125,76 @@ class ApiClient {
     return this.request<Alert>(`/alerts/${alertId}/dismiss`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
+    });
+  }
+
+  // Events
+  public async listEvents(filters?: {
+    camera_id?: string;
+    severity?: string;
+    status?: string;
+    limit?: number;
+  }): Promise<EventItem[]> {
+    const params = new URLSearchParams();
+    if (filters?.camera_id) params.append('camera_id', filters.camera_id);
+    if (filters?.severity) params.append('severity', filters.severity);
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.limit) params.append('limit', String(filters.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<EventItem[]>(`/events${qs}`);
+  }
+
+  public async getEvent(eventId: string): Promise<EventItem> {
+    return this.request<EventItem>(`/events/${eventId}`);
+  }
+
+  public async ackEvent(eventId: string): Promise<EventItem> {
+    return this.request<EventItem>(`/events/${eventId}/ack`, { method: 'POST' });
+  }
+
+  public async markFalseAlarm(eventId: string, reason: string): Promise<EventItem> {
+    return this.request<EventItem>(`/events/${eventId}/false-alarm`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  public getEventClipUrl(eventId: string): string {
+    const token = this.getToken();
+    return `${this.baseUrl}/events/${eventId}/clip${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  }
+
+  public getEventKeyframeUrl(eventId: string, label: string): string {
+    const token = this.getToken();
+    return `${this.baseUrl}/events/${eventId}/keyframes/${label}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  }
+
+  // System & Health
+  public async getSystemHealth(): Promise<SystemHealth> {
+    return this.request<SystemHealth>('/system/health');
+  }
+
+  public async getSystemConfigSummary(): Promise<any> {
+    return this.request<any>('/system/config-summary');
+  }
+
+  public async listAuditLogs(filters?: { action?: string; limit?: number }): Promise<AuditLogEntry[]> {
+    const params = new URLSearchParams();
+    if (filters?.action) params.append('action', filters.action);
+    if (filters?.limit) params.append('limit', String(filters.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<AuditLogEntry[]>(`/audit${qs}`);
+  }
+
+  // Users (owner)
+  public async listUsers(): Promise<User[]> {
+    return this.request<User[]>('/users');
+  }
+
+  public async createUser(user: { username: string; password: string; role: string }): Promise<User> {
+    return this.request<User>('/users', {
+      method: 'POST',
+      body: JSON.stringify(user),
     });
   }
 }

@@ -47,12 +47,19 @@ def test_login_failure():
     # Wrong password
     resp = client.post("/api/v1/auth/login", data={"username": "admin", "password": "wrong"})
     assert resp.status_code == 401
-    assert resp.json()["detail"] == "Incorrect password"
+    assert resp.json()["detail"] == "Incorrect username or password"
 
     # Non-existent user
     resp2 = client.post("/api/v1/auth/login", data={"username": "nonexistent", "password": "any"})
     assert resp2.status_code == 401
-    assert resp2.json()["detail"] == "User does not exist"
+    assert resp2.json()["detail"] == "Incorrect username or password"
+
+    # Verify server audit log kept specific reasons without exposing them in response
+    conn = get_connection()
+    logs = conn.execute("SELECT * FROM audit_log WHERE action = 'login_failed' ORDER BY ts DESC LIMIT 2").fetchall()
+    reasons = [log["detail_json"] for log in logs]
+    assert any("user_not_found" in r for r in reasons)
+    assert any("wrong_password" in r for r in reasons)
 
 def test_rate_limit():
     for _ in range(5):
