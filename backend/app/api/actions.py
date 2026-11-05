@@ -454,6 +454,11 @@ def delete_action(
     zone = db.execute("SELECT camera_id FROM zones WHERE id = ?", (row["zone_id"],)).fetchone()
     camera_id = zone["camera_id"] if zone else None
 
+    # Unlink referencing events to preserve historical records without violating foreign keys
+    db.execute("UPDATE events SET action_id = NULL WHERE action_id = ?", (action_id,))
+    # Delete any action-scoped calendar exemptions
+    db.execute("DELETE FROM calendar_exemptions WHERE action_id = ?", (action_id,))
+
     db.execute("DELETE FROM registered_actions WHERE id = ?", (action_id,))
 
     log_audit(

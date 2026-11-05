@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { Camera, Track, TracksMessage, Zone } from '../../types';
 import { api } from '../../services/api';
 import { wsService } from '../../services/websocket';
-import { drawTrack, drawZone } from '../../utils/overlay';
+import { drawTrack, drawZone, fit } from '../../utils/overlay';
 
 interface CameraTileProps {
   camera: Camera;
@@ -24,6 +24,12 @@ export const CameraTile: React.FC<CameraTileProps> = ({ camera, isFocused = fals
     camera.width || 1920,
     camera.height || 1080,
   ]);
+
+  useEffect(() => {
+    if (camera.width && camera.height && camera.width > 0 && camera.height > 0) {
+      setFrameSize([camera.width, camera.height]);
+    }
+  }, [camera.width, camera.height]);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const tracksTimeoutRef = useRef<number | null>(null);
@@ -218,17 +224,18 @@ export const CameraTile: React.FC<CameraTileProps> = ({ camera, isFocused = fals
     }
 
     const canvasDimensions = { width: canvas.width, height: canvas.height };
+    const contentRect = fit(canvas.width, canvas.height, frameSize[0], frameSize[1]);
 
     // 1. Draw zones (special dashed amber, normal dotted grey)
     for (const zone of zones) {
       if (zone.enabled) {
-        drawZone(ctx, zone, canvasDimensions);
+        drawZone(ctx, zone, canvasDimensions, contentRect);
       }
     }
 
     // 2. Draw tracks
     for (const track of activeTracks) {
-      drawTrack(ctx, track, frameSize, canvasDimensions);
+      drawTrack(ctx, track, frameSize, canvasDimensions, contentRect);
     }
   }, [zones, activeTracks, frameSize, camera.status, streamError]);
 
@@ -275,6 +282,7 @@ export const CameraTile: React.FC<CameraTileProps> = ({ camera, isFocused = fals
   return (
     <div
       ref={containerRef}
+      data-testid={`camera-tile-${camera.id}`}
       className={`flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg transition-all ${
         isFocused ? 'ring-2 ring-amber-500 shadow-2xl' : 'hover:border-slate-700'
       }`}
@@ -341,6 +349,12 @@ export const CameraTile: React.FC<CameraTileProps> = ({ camera, isFocused = fals
             playsInline
             muted
             className="w-full h-full object-contain"
+            onLoadedMetadata={(e) => {
+              const v = e.currentTarget;
+              if (v.videoWidth > 0 && v.videoHeight > 0) {
+                setFrameSize([v.videoWidth, v.videoHeight]);
+              }
+            }}
           />
         )}
 

@@ -5,7 +5,8 @@ app:
 paths:
   data_dir: data
 media: {}
-analysis: {}
+analysis:
+  track_broadcast_hz: 25  # Target frequency (Hz) for broadcasting live bounding box tracks over WebSocket for UI overlay (default: 25 Hz / 40 ms)
 models: {}
 heavy_categories: [truck, bus]
 vehicles: {}

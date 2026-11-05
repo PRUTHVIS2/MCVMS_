@@ -334,7 +334,7 @@ test.describe('Setup Wizard E2E Tests (Milestone A)', () => {
     await expect(page.getByTestId('rule-builder')).toBeVisible();
 
     // Click Heavy Vehicle preset
-    await page.click('button[data-testid="preset-heavy-vehicle"]');
+    await page.selectOption('select[data-testid="select-preset"]', 'heavy_vehicle');
 
     // Verify Live Sentence Summary
     const sentence = page.getByTestId('live-sentence-summary');
@@ -401,4 +401,168 @@ test.describe('Setup Wizard E2E Tests (Milestone A)', () => {
     await page.click('button[data-testid="confirm-delete-camera"]');
     await expect(page.getByTestId('cameras-message')).toBeVisible();
   });
+  test('aspect ratios and coordinate mapping: drawing on a 4:3 camera normalises relative to displayed frame and renders correctly on wall tile', async ({ page }) => {
+    // 1. Mock 4:3 camera (1440x1080)
+    await page.route('**/api/v1/cameras/cam_43', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 'cam_43',
+          name: '4:3 Gate Camera',
+          enabled: true,
+          features: { vehicles: true, id_check: false },
+          width: 1440,
+          height: 1080,
+          fps: 25,
+          status: 'online',
+        }),
+      });
+    });
+
+    await page.route('**/api/v1/cameras/cam_43/stream-info', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          webrtc_url: null,
+          hls_url: null,
+          status: 'online',
+        }),
+      });
+    });
+
+    await page.route('**/api/v1/cameras', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            id: 'cam_43',
+            name: '4:3 Gate Camera',
+            enabled: true,
+            features: { vehicles: true, id_check: false },
+            width: 1440,
+            height: 1080,
+            fps: 25,
+            status: 'online',
+          },
+        ]),
+      });
+    });
+
+    let savedPoints: [number, number][] = [];
+    await page.route('**/api/v1/cameras/cam_43/zones', async (route) => {
+      if (route.request().method() === 'POST') {
+        const body = JSON.parse(route.request().postData() || '{}');
+        savedPoints = body.points;
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'zone_43_01',
+            camera_id: 'cam_43',
+            name: body.name || '4:3 Test Zone',
+            kind: body.kind,
+            shape: body.shape,
+            points: body.points,
+            direction: null,
+            is_read_area: false,
+            enabled: true,
+            created_at: 1793769000000,
+            updated_at: 1793769000000,
+          }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(
+            savedPoints.length > 0
+              ? [
+                  {
+                    id: 'zone_43_01',
+                    camera_id: 'cam_43',
+                    name: '4:3 Test Zone',
+                    kind: 'normal',
+                    shape: 'polygon',
+                    points: savedPoints,
+                    direction: null,
+                    is_read_area: false,
+                    enabled: true,
+                  },
+                ]
+              : []
+          ),
+        });
+      }
+    });
+
+    // Mock 4:3 snapshot endpoint (640x480)
+    await page.route('**/api/v1/cameras/cam_43/snapshot', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480"><rect width="640" height="480" fill="#1e293b"/></svg>',
+      });
+    });
+
+    // 2. Login
+    await page.goto('/');
+    await page.fill('input#username', 'admin');
+    await page.fill('input#password', 'adminpass');
+    await page.click('button[type="submit"]');
+
+    // 3. Go to Setup Wizard
+    await page.click('button:has-text("Setup & Rules")');
+    await expect(page.getByTestId('setup-wizard')).toBeVisible();
+
+    // Step 1: Advance to Step 2
+    await page.click('button[data-testid="btn-next-step-1"]');
+    await expect(page.getByTestId('wizard-step-2')).toBeVisible();
+
+    // 4. Draw polygon on 4:3 canvas
+    await page.click('button[data-testid="btn-clear-points"]');
+    const canvas = page.getByTestId('zone-canvas');
+    await expect(canvas).toBeVisible();
+
+    // Evaluate canvas dimensions and compute pillarboxed 4:3 contentRect
+    const { cw, ch } = await canvas.evaluate((el: HTMLCanvasElement) => {
+      const r = el.getBoundingClientRect();
+      return { cw: r.width, ch: r.height };
+    });
+
+    const dispHeight = ch;
+    const dispWidth = ch * (4 / 3);
+    const offsetX = (cw - dispWidth) / 2;
+
+    // Click 3 points inside 4:3 displayed image using canvas-relative click:
+    // 1. Top-Left relative to 4:3 image -> (offsetX + 10, 10)
+    await canvas.click({ position: { x: Math.round(offsetX + 10), y: 10 } });
+    // 2. Center -> (offsetX + dispWidth * 0.5, dispHeight * 0.5)
+    await canvas.click({ position: { x: Math.round(offsetX + dispWidth * 0.5), y: Math.round(dispHeight * 0.5) } });
+    // 3. Bottom-Right -> (offsetX + dispWidth - 10, dispHeight - 10)
+    await canvas.click({ position: { x: Math.round(offsetX + dispWidth - 10), y: Math.round(dispHeight - 10) } });
+
+    // Save zone
+    await page.fill('input[data-testid="input-zone-name"]', '4:3 Loading Area');
+    await page.click('button[data-testid="btn-save-zone"]');
+
+    // Verify saved normalized points match 4:3 image coordinates (not container coordinates!)
+    expect(savedPoints.length).toBe(3);
+    expect(savedPoints[0][0]).toBeCloseTo(0.0, 1);
+    expect(savedPoints[0][1]).toBeCloseTo(0.0, 1);
+    expect(savedPoints[1][0]).toBeCloseTo(0.5, 1);
+    expect(savedPoints[1][1]).toBeCloseTo(0.5, 1);
+    expect(savedPoints[2][0]).toBeCloseTo(1.0, 1);
+    expect(savedPoints[2][1]).toBeCloseTo(1.0, 1);
+
+    // 5. Navigate to Live Wall and verify tile renders
+    await page.click('button:has-text("Live Wall")');
+    await expect(page.getByTestId('camera-tile-cam_43')).toBeVisible();
+    const overlayCanvas = page.locator('canvas[data-testid="camera-overlay-canvas"]');
+    await expect(overlayCanvas).toBeVisible();
+  });
+
 });
+

@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   distance,
   findClosestVertex,
+  fit,
   flipDirection,
   getLineDirectionArrow,
   isNormalized,
+  normalizedToPixel,
+  pixelToNormalized,
   toCanvasCoords,
   toNormalizedCoords,
   validateZonePoints,
@@ -102,5 +105,108 @@ describe('geometry utilities', () => {
       ]).valid
     ).toBe(true);
   });
-});
+  describe('fit (getContentRect) and letterbox coordinate mapping', () => {
+    it('computes correct contentRect with letterboxing/pillarboxing for 16:9 and 4:3 in wide, tall, and square containers', () => {
+      // 16:9 frame (1920x1080) in wide container (1600x600 -> containerAspect ~2.67 > frameAspect ~1.78)
+      // Pillarboxed: full height, centered horizontally
+      const wide169 = fit(1600, 600, 1920, 1080);
+      expect(wide169.height).toBe(600);
+      expect(Math.round(wide169.width)).toBe(Math.round(600 * (16 / 9))); // ~1067
+      expect(Math.round(wide169.x)).toBe(Math.round((1600 - wide169.width) / 2));
+      expect(wide169.y).toBe(0);
 
+      // 16:9 frame in tall container (800x1000 -> containerAspect 0.8 < 1.78)
+      // Letterboxed: full width, centered vertically
+      const tall169 = fit(800, 1000, 1920, 1080);
+      expect(tall169.width).toBe(800);
+      expect(Math.round(tall169.height)).toBe(450);
+      expect(tall169.x).toBe(0);
+      expect(tall169.y).toBe(275);
+
+      // 16:9 frame in square container (1000x1000)
+      const square169 = fit(1000, 1000, 1920, 1080);
+      expect(square169.width).toBe(1000);
+      expect(Math.round(square169.height)).toBe(563);
+      expect(square169.x).toBe(0);
+      expect(Math.round(square169.y)).toBe(219);
+
+      // 4:3 frame (2560x1920) in wide container (1600x900 -> containerAspect 1.78 > 1.33)
+      // Pillarboxed: full height, centered horizontally
+      const wide43 = fit(1600, 900, 2560, 1920);
+      expect(wide43.height).toBe(900);
+      expect(wide43.width).toBe(1200);
+      expect(wide43.x).toBe(200);
+      expect(wide43.y).toBe(0);
+
+      // 4:3 frame in tall container (600x900 -> containerAspect 0.67 < 1.33)
+      // Letterboxed: full width, centered vertically
+      const tall43 = fit(600, 900, 640, 480);
+      expect(tall43.width).toBe(600);
+      expect(tall43.height).toBe(450);
+      expect(tall43.x).toBe(0);
+      expect(tall43.y).toBe(225);
+
+      // 4:3 frame in square container (1000x1000 -> containerAspect 1.0 < 1.33)
+      const square43 = fit(1000, 1000, 4, 3);
+      expect(square43.width).toBe(1000);
+      expect(square43.height).toBe(750);
+      expect(square43.x).toBe(0);
+      expect(square43.y).toBe(125);
+    });
+
+    it('maps corners to letterbox boundaries and round-trips coordinates accurately', () => {
+      const rect = fit(1600, 900, 2560, 1920); // 4:3 in 16:9 container -> x: 200, y: 0, w: 1200, h: 900
+
+      // Corners
+      const topLeft = normalizedToPixel([0, 0], rect);
+      expect(topLeft).toEqual([200, 0]);
+
+      const bottomRight = normalizedToPixel([1, 1], rect);
+      expect(bottomRight).toEqual([1400, 900]);
+
+      // Center
+      const center = normalizedToPixel([0.5, 0.5], rect);
+      expect(center).toEqual([800, 450]);
+
+      // Round trip normalized -> pixel -> normalized
+      const testPoints: [number, number][] = [
+        [0, 0],
+        [1, 1],
+        [0.25, 0.75],
+        [0.6, 0.4],
+        [0.1234, 0.9876],
+      ];
+
+      for (const pt of testPoints) {
+        const px = normalizedToPixel(pt, rect);
+        const norm = pixelToNormalized(px[0], px[1], rect);
+        expect(norm[0]).toBeCloseTo(pt[0], 3);
+        expect(norm[1]).toBeCloseTo(pt[1], 3);
+      }
+    });
+
+    it('clamps clicks in letterbox bars to [0, 1]', () => {
+      const rect = fit(1600, 900, 2560, 1920); // x: 200, y: 0, w: 1200, h: 900 (bars on x: 0..200 and 1400..1600)
+
+      // Click in left black bar
+      const leftBar = pixelToNormalized(50, 450, rect);
+      expect(leftBar[0]).toBe(0);
+      expect(leftBar[1]).toBe(0.5);
+
+      // Click in right black bar
+      const rightBar = pixelToNormalized(1550, 450, rect);
+      expect(rightBar[0]).toBe(1);
+      expect(rightBar[1]).toBe(0.5);
+
+      // Click outside top/bottom
+      const tallRect = fit(600, 900, 640, 480); // x: 0, y: 225, w: 600, h: 450
+      const topBar = pixelToNormalized(300, 50, tallRect);
+      expect(topBar[0]).toBe(0.5);
+      expect(topBar[1]).toBe(0);
+
+      const bottomBar = pixelToNormalized(300, 850, tallRect);
+      expect(bottomBar[0]).toBe(0.5);
+      expect(bottomBar[1]).toBe(1);
+    });
+  });
+});

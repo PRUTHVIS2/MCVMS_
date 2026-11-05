@@ -1,4 +1,7 @@
 import type { Track, Zone } from '../types';
+import { fit, type ContentRect } from './geometry';
+
+export { fit, getContentRect, type ContentRect, normalizedToPixel, pixelToNormalized } from './geometry';
 
 export interface CanvasDimensions {
   width: number;
@@ -13,55 +16,60 @@ export interface ScaledBox {
 }
 
 /**
- * Scale source frame coordinates [x1, y1, x2, y2] to display canvas dimensions.
+ * Scale source frame coordinates [x1, y1, x2, y2] to display canvas dimensions,
+ * preserving aspect ratio within contentRect (letterboxed/pillarboxed).
  */
 export function scaleBox(
   box: [number, number, number, number],
   frameSize: [number, number],
-  canvasSize: CanvasDimensions
+  canvasSize: CanvasDimensions,
+  contentRect?: ContentRect
 ): ScaledBox {
   const [fx, fy] = frameSize;
-  const { width: cw, height: ch } = canvasSize;
+  const rect = contentRect || (fx > 0 && fy > 0 ? fit(canvasSize.width, canvasSize.height, fx, fy) : { x: 0, y: 0, width: canvasSize.width, height: canvasSize.height });
 
-  if (fx <= 0 || fy <= 0 || cw <= 0 || ch <= 0) {
+  if (fx <= 0 || fy <= 0 || rect.width <= 0 || rect.height <= 0) {
     return { x: 0, y: 0, w: 0, h: 0 };
   }
 
-  const sx = cw / fx;
-  const sy = ch / fy;
+  const sx = rect.width / fx;
+  const sy = rect.height / fy;
 
   const [x1, y1, x2, y2] = box;
-  const x = Math.max(0, x1 * sx);
-  const y = Math.max(0, y1 * sy);
-  const w = Math.min(cw - x, Math.max(0, (x2 - x1) * sx));
-  const h = Math.min(ch - y, Math.max(0, (y2 - y1) * sy));
+  const x = Math.max(0, rect.x + x1 * sx);
+  const y = Math.max(0, rect.y + y1 * sy);
+  const w = Math.max(0, (x2 - x1) * sx);
+  const h = Math.max(0, (y2 - y1) * sy);
 
   return { x, y, w, h };
 }
 
 /**
- * Scale normalized point [0..1, 0..1] to display canvas coordinates.
+ * Scale normalized point [0..1, 0..1] to display canvas coordinates relative to contentRect.
  */
 export function scaleNormalizedPoint(
   point: [number, number],
-  canvasSize: CanvasDimensions
+  canvasSize: CanvasDimensions,
+  contentRect?: ContentRect
 ): { x: number; y: number } {
+  const rect = contentRect || { x: 0, y: 0, width: canvasSize.width, height: canvasSize.height };
   const [px, py] = point;
   return {
-    x: px * canvasSize.width,
-    y: py * canvasSize.height,
+    x: rect.x + px * rect.width,
+    y: rect.y + py * rect.height,
   };
 }
 
 /**
- * Draw zone boundary on the canvas.
+ * Draw zone boundary on the canvas with letterbox/pillarbox alignment.
  * - Special zones: dashed amber line, amber tint.
  * - Normal zones: dotted grey line, subtle grey tint.
  */
 export function drawZone(
   ctx: CanvasRenderingContext2D,
   zone: Zone,
-  canvasSize: CanvasDimensions
+  canvasSize: CanvasDimensions,
+  contentRect?: ContentRect
 ): void {
   if (!zone.points || zone.points.length < 2) return;
 
@@ -78,11 +86,11 @@ export function drawZone(
   ctx.fillStyle = fillColor;
 
   ctx.beginPath();
-  const first = scaleNormalizedPoint(zone.points[0], canvasSize);
+  const first = scaleNormalizedPoint(zone.points[0], canvasSize, contentRect);
   ctx.moveTo(first.x, first.y);
 
   for (let i = 1; i < zone.points.length; i++) {
-    const pt = scaleNormalizedPoint(zone.points[i], canvasSize);
+    const pt = scaleNormalizedPoint(zone.points[i], canvasSize, contentRect);
     ctx.lineTo(pt.x, pt.y);
   }
 
@@ -98,7 +106,7 @@ export function drawZone(
     ctx.setLineDash([]);
     ctx.fillStyle = strokeColor;
     for (const p of zone.points) {
-      const pt = scaleNormalizedPoint(p, canvasSize);
+      const pt = scaleNormalizedPoint(p, canvasSize, contentRect);
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
       ctx.fill();
@@ -106,8 +114,8 @@ export function drawZone(
 
     // Direction indicator
     if (zone.direction && zone.points.length >= 2) {
-      const p1 = scaleNormalizedPoint(zone.points[0], canvasSize);
-      const p2 = scaleNormalizedPoint(zone.points[1], canvasSize);
+      const p1 = scaleNormalizedPoint(zone.points[0], canvasSize, contentRect);
+      const p2 = scaleNormalizedPoint(zone.points[1], canvasSize, contentRect);
       const midX = (p1.x + p2.x) / 2;
       const midY = (p1.y + p2.y) / 2;
       const dx = p2.x - p1.x;
@@ -126,7 +134,7 @@ export function drawZone(
 
   // Draw zone name label
   ctx.setLineDash([]);
-  const labelPt = scaleNormalizedPoint(zone.points[0], canvasSize);
+  const labelPt = scaleNormalizedPoint(zone.points[0], canvasSize, contentRect);
   const text = `${zone.name} (${zone.kind})`;
   ctx.font = '11px sans-serif';
   const textWidth = ctx.measureText(text).width;
@@ -162,15 +170,17 @@ export function getAttributeChips(track: Track): string[] {
 }
 
 /**
- * Draw a single track detection box, track ID, and attribute chips on the canvas.
+ * Draw a single track detection box, track ID, and attribute chips on the canvas with letterbox/pillarbox alignment.
  */
 export function drawTrack(
   ctx: CanvasRenderingContext2D,
   track: Track,
   frameSize: [number, number],
-  canvasSize: CanvasDimensions
+  canvasSize: CanvasDimensions,
+  contentRect?: ContentRect
 ): void {
-  const box = scaleBox(track.bbox, frameSize, canvasSize);
+  const rect = contentRect || fit(canvasSize.width, canvasSize.height, frameSize[0], frameSize[1]);
+  const box = scaleBox(track.bbox, frameSize, canvasSize, rect);
   if (box.w <= 0 || box.h <= 0) return;
 
   ctx.save();

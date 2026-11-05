@@ -2,6 +2,77 @@ import type { Direction, ZoneShape } from '../types';
 
 export type Point = [number, number];
 
+export interface ContentRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Computes the letterboxed/pillarboxed rectangle where a video or image frame
+ * is actually displayed inside a container (equivalent to CSS object-contain).
+ */
+export function fit(
+  containerWidth: number,
+  containerHeight: number,
+  frameWidth: number,
+  frameHeight: number
+): ContentRect {
+  if (containerWidth <= 0 || containerHeight <= 0 || frameWidth <= 0 || frameHeight <= 0) {
+    return { x: 0, y: 0, width: Math.max(0, containerWidth), height: Math.max(0, containerHeight) };
+  }
+
+  const containerAspect = containerWidth / containerHeight;
+  const frameAspect = frameWidth / frameHeight;
+
+  if (containerAspect > frameAspect) {
+    // Container is wider than frame -> Pillarbox (bars on left and right)
+    const displayedHeight = containerHeight;
+    const displayedWidth = containerHeight * frameAspect;
+    const x = (containerWidth - displayedWidth) / 2;
+    return { x, y: 0, width: displayedWidth, height: displayedHeight };
+  } else if (containerAspect < frameAspect) {
+    // Container is taller than frame -> Letterbox (bars on top and bottom)
+    const displayedWidth = containerWidth;
+    const displayedHeight = containerWidth / frameAspect;
+    const y = (containerHeight - displayedHeight) / 2;
+    return { x: 0, y, width: displayedWidth, height: displayedHeight };
+  } else {
+    // Exact aspect match
+    return { x: 0, y: 0, width: containerWidth, height: containerHeight };
+  }
+}
+
+export const getContentRect = fit;
+
+/**
+ * Convert normalized [0..1] point to canvas pixel coordinates relative to contentRect.
+ */
+export function normalizedToPixel(point: Point, contentRect: ContentRect): Point {
+  return [
+    Math.round(contentRect.x + point[0] * contentRect.width),
+    Math.round(contentRect.y + point[1] * contentRect.height),
+  ];
+}
+
+/**
+ * Convert canvas pixel coordinates to normalized [0..1] coordinates relative to contentRect.
+ * Clamps coordinates to [0, 1] so clicks in letterbox bars clamp to the edge.
+ */
+export function pixelToNormalized(
+  pixelX: number,
+  pixelY: number,
+  contentRect: ContentRect
+): Point {
+  if (contentRect.width <= 0 || contentRect.height <= 0) {
+    return [0, 0];
+  }
+  const normX = Math.max(0, Math.min(1, (pixelX - contentRect.x) / contentRect.width));
+  const normY = Math.max(0, Math.min(1, (pixelY - contentRect.y) / contentRect.height));
+  return [Number(normX.toFixed(4)), Number(normY.toFixed(4))];
+}
+
 /**
  * Check if coordinates are normalized [0.0..1.0].
  */
@@ -11,17 +82,31 @@ export function isNormalized(p: Point): boolean {
 
 /**
  * Convert normalized [0..1] points to canvas/pixel coordinates.
+ * Accepts either (point, contentRect) or (point, width, height).
  */
-export function toCanvasCoords(p: Point, width: number, height: number): Point {
-  return [Math.round(p[0] * width), Math.round(p[1] * height)];
+export function toCanvasCoords(p: Point, widthOrRect: ContentRect | number, height?: number): Point {
+  if (typeof widthOrRect === 'object') {
+    return normalizedToPixel(p, widthOrRect);
+  }
+  return [Math.round(p[0] * widthOrRect), Math.round(p[1] * (height ?? widthOrRect))];
 }
 
 /**
  * Convert canvas/pixel coordinates to normalized [0..1] points clamped to [0, 1].
+ * Accepts either (x, y, contentRect) or (x, y, width, height).
  */
-export function toNormalizedCoords(x: number, y: number, width: number, height: number): Point {
-  const normX = Math.max(0, Math.min(1, x / width));
-  const normY = Math.max(0, Math.min(1, y / height));
+export function toNormalizedCoords(
+  x: number,
+  y: number,
+  widthOrRect: ContentRect | number,
+  height?: number
+): Point {
+  if (typeof widthOrRect === 'object') {
+    return pixelToNormalized(x, y, widthOrRect);
+  }
+  const h = height ?? widthOrRect;
+  const normX = Math.max(0, Math.min(1, x / widthOrRect));
+  const normY = Math.max(0, Math.min(1, y / h));
   return [Number(normX.toFixed(4)), Number(normY.toFixed(4))];
 }
 
@@ -41,12 +126,12 @@ export function distance(p1: Point, p2: Point): number {
 export function findClosestVertex(
   points: Point[],
   clickPoint: Point,
-  canvasWidth: number,
-  canvasHeight: number,
+  canvasWidthOrRect: ContentRect | number,
+  canvasHeight?: number,
   thresholdPx = 12
 ): number {
   for (let i = 0; i < points.length; i++) {
-    const canvasP = toCanvasCoords(points[i], canvasWidth, canvasHeight);
+    const canvasP = toCanvasCoords(points[i], canvasWidthOrRect as any, canvasHeight);
     if (distance(canvasP, clickPoint) <= thresholdPx) {
       return i;
     }
@@ -72,13 +157,13 @@ export function getLineDirectionArrow(
   p1: Point,
   p2: Point,
   direction: Direction | null | undefined,
-  canvasWidth: number,
-  canvasHeight: number
+  canvasWidthOrRect: ContentRect | number,
+  canvasHeight?: number
 ): { start: Point; end: Point } | null {
   if (!direction || direction === 'both') return null;
 
-  const cp1 = toCanvasCoords(p1, canvasWidth, canvasHeight);
-  const cp2 = toCanvasCoords(p2, canvasWidth, canvasHeight);
+  const cp1 = toCanvasCoords(p1, canvasWidthOrRect as any, canvasHeight);
+  const cp2 = toCanvasCoords(p2, canvasWidthOrRect as any, canvasHeight);
 
   const midX = (cp1[0] + cp2[0]) / 2;
   const midY = (cp1[1] + cp2[1]) / 2;
@@ -124,4 +209,3 @@ export function validateZonePoints(shape: ZoneShape, points: Point[]): { valid: 
   }
   return { valid: true };
 }
-

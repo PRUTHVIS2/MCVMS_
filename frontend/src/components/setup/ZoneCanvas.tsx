@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { Direction, Zone, ZoneKind, ZoneShape } from '../../types';
 import {
   findClosestVertex,
+  fit,
   getLineDirectionArrow,
+  pixelToNormalized,
   toCanvasCoords,
-  toNormalizedCoords,
 } from '../../utils/geometry';
 
 interface ZoneCanvasProps {
@@ -16,6 +17,8 @@ interface ZoneCanvasProps {
   points: [number, number][];
   onPointsChange: (points: [number, number][]) => void;
   disabled?: boolean;
+  frameWidth?: number;
+  frameHeight?: number;
 }
 
 export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
@@ -27,15 +30,36 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
   points,
   onPointsChange,
   disabled = false,
+  frameWidth,
+  frameHeight,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 800, height: 450 });
+  const [imageSize, setImageSize] = useState<{ width: number; height: number }>({
+    width: frameWidth || 1920,
+    height: frameHeight || 1080,
+  });
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [imageError, setImageError] = useState(false);
+
+  // Sync prop changes for frame dimensions
+  useEffect(() => {
+    if (frameWidth && frameHeight && frameWidth > 0 && frameHeight > 0) {
+      setImageSize({ width: frameWidth, height: frameHeight });
+    }
+  }, [frameWidth, frameHeight]);
+
+  // Read natural image dimensions when snapshot loads
+  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+    }
+  };
 
   // Resize canvas when container size changes
   useEffect(() => {
@@ -43,7 +67,7 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         const width = Math.floor(rect.width);
-        const height = Math.floor(rect.width * (9 / 16)); // 16:9 aspect ratio
+        const height = Math.max(360, Math.floor(rect.width * (9 / 16)));
         if (width > 0 && height > 0) {
           setDimensions({ width, height });
         }
@@ -54,6 +78,9 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
   }, []);
+
+  // Compute shared letterbox contentRect
+  const contentRect = fit(dimensions.width, dimensions.height, imageSize.width, imageSize.height);
 
   // Redraw canvas
   const draw = useCallback(() => {
@@ -68,7 +95,7 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
     // 1. Draw existing zones (inactive background)
     existingZones.forEach((z) => {
       if (!z.points || z.points.length < 2) return;
-      const pts = z.points.map((p) => toCanvasCoords(p, width, height));
+      const pts = z.points.map((p) => toCanvasCoords(p, contentRect));
 
       ctx.save();
       ctx.beginPath();
@@ -102,7 +129,7 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
 
     // 2. Draw current active zone being edited
     if (points.length > 0) {
-      const activePts = points.map((p) => toCanvasCoords(p, width, height));
+      const activePts = points.map((p) => toCanvasCoords(p, contentRect));
       const strokeColor = kind === 'special' ? '#f59e0b' : '#3b82f6';
       const fillColor = kind === 'special' ? 'rgba(245, 158, 11, 0.28)' : 'rgba(59, 130, 246, 0.22)';
 
@@ -126,7 +153,7 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
 
       // For line shape, draw directional arrow
       if (shape === 'line' && points.length === 2) {
-        const arrow = getLineDirectionArrow(points[0], points[1], direction, width, height);
+        const arrow = getLineDirectionArrow(points[0], points[1], direction, contentRect);
         if (arrow) {
           ctx.beginPath();
           ctx.moveTo(arrow.start[0], arrow.start[1]);
@@ -174,7 +201,7 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
 
       ctx.restore();
     }
-  }, [dimensions, existingZones, points, shape, kind, direction, hoveredIdx, draggingIdx]);
+  }, [dimensions, contentRect, existingZones, points, shape, kind, direction, hoveredIdx, draggingIdx]);
 
   useEffect(() => {
     draw();
@@ -191,21 +218,31 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
     const clickY = e.clientY - rect.top;
 
     // Check if clicked on existing vertex for dragging
-    const hitIdx = findClosestVertex(points, [clickX, clickY], dimensions.width, dimensions.height, 14);
+    const hitIdx = findClosestVertex(points, [clickX, clickY], contentRect, undefined, 14);
     if (hitIdx !== -1) {
       setDraggingIdx(hitIdx);
       return;
     }
 
-    // Otherwise, add a new point
+    // Ignore clicks outside the displayed contentRect (i.e. in letterbox bars)
+    const isInside =
+      clickX >= contentRect.x &&
+      clickX <= contentRect.x + contentRect.width &&
+      clickY >= contentRect.y &&
+      clickY <= contentRect.y + contentRect.height;
+
+    if (!isInside) {
+      return;
+    }
+
+    const newPt = pixelToNormalized(clickX, clickY, contentRect);
+
     if (shape === 'line' && points.length >= 2) {
       // Line is already complete, reset to start new line
-      const newPt = toNormalizedCoords(clickX, clickY, dimensions.width, dimensions.height);
       onPointsChange([newPt]);
       return;
     }
 
-    const newPt = toNormalizedCoords(clickX, clickY, dimensions.width, dimensions.height);
     onPointsChange([...points, newPt]);
   };
 
@@ -220,10 +257,10 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
 
     if (draggingIdx !== null) {
       const updated = [...points];
-      updated[draggingIdx] = toNormalizedCoords(mouseX, mouseY, dimensions.width, dimensions.height);
+      updated[draggingIdx] = pixelToNormalized(mouseX, mouseY, contentRect);
       onPointsChange(updated);
     } else {
-      const hitIdx = findClosestVertex(points, [mouseX, mouseY], dimensions.width, dimensions.height, 14);
+      const hitIdx = findClosestVertex(points, [mouseX, mouseY], contentRect, undefined, 14);
       setHoveredIdx(hitIdx !== -1 ? hitIdx : null);
     }
   };
@@ -235,17 +272,18 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative w-full rounded-xl overflow-hidden bg-slate-900 border border-slate-800 shadow-inner select-none"
+      className="relative w-full rounded-xl overflow-hidden bg-slate-900 border border-slate-800 shadow-inner select-none flex items-center justify-center"
       style={{ height: dimensions.height }}
       data-testid="zone-canvas-container"
     >
-      {/* Background Camera Snapshot */}
+      {/* Background Camera Snapshot with object-contain */}
       {snapshotUrl && !imageError ? (
         <img
           ref={imgRef}
           src={snapshotUrl}
           alt="Live camera snapshot"
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+          className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
+          onLoad={handleImageLoad}
           onError={() => setImageError(true)}
         />
       ) : (
@@ -257,10 +295,14 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
         </div>
       )}
 
-      {/* Grid overlay for positioning reference */}
+      {/* Grid overlay for positioning reference (clipped to contentRect) */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-15"
+        className="absolute pointer-events-none opacity-15 border border-slate-700/40"
         style={{
+          left: contentRect.x,
+          top: contentRect.y,
+          width: contentRect.width,
+          height: contentRect.height,
           backgroundImage:
             'linear-gradient(to right, #475569 1px, transparent 1px), linear-gradient(to bottom, #475569 1px, transparent 1px)',
           backgroundSize: '40px 40px',
@@ -295,6 +337,9 @@ export const ZoneCanvas: React.FC<ZoneCanvasProps> = ({
         </span>
         <span className="text-[10px] bg-slate-900/80 text-slate-300 px-2 py-0.5 rounded font-mono border border-slate-700/60">
           {points.length} {points.length === 1 ? 'vertex' : 'vertices'}
+        </span>
+        <span className="text-[10px] bg-slate-900/80 text-slate-400 px-2 py-0.5 rounded font-mono border border-slate-700/60">
+          {imageSize.width}x{imageSize.height}
         </span>
       </div>
     </div>

@@ -61,6 +61,16 @@ Statuses: `NOT_STARTED`, `IN_PROGRESS`, `PARTIAL` (some required tests skipped),
 ## Measured results (only real numbers, with the command that produced them)
 | Metric | Value | Command / script | Date |
 |---|---|---|---|
+| Box lag pipeline delay (cam01) | 17.4 ms avg (p50: 18 ms, p95: 23 ms) | python -m app.tools.measure_box_lag --camera cam01 --duration 5 | 2026-11-05 |
+| Box broadcast frequency (cam01) | 16.4 Hz (61.4 ms interval; up from 7.6 Hz) | python -m app.tools.measure_box_lag --camera cam01 --duration 5 | 2026-11-05 |
+| OpenCV grab() discard cost (buffered) | 0.22 ms/frame (av_read_frame + avcodec_send_packet) | python -m app.tools.measure_box_lag --profile-stages | 2026-11-05 |
+| Frame decode retrieve() to BGR | 5.39 - 5.61 ms | python -m app.tools.measure_box_lag --profile-stages | 2026-11-05 |
+| YOLO11n GPU inference | 21.44 ms | python -m app.tools.measure_box_lag --profile-stages | 2026-11-05 |
+| ByteTrack update | 1.03 ms | python -m app.tools.measure_box_lag --profile-stages | 2026-11-05 |
+| Rules Engine step() | 0.002 ms/step | python -m app.tools.measure_box_lag --profile-stages | 2026-11-05 |
+| Rules check: car_exit (crossing) | Expected=2.00s, Actual=2.11s, Diff=0.11s (PASS) | python -m app.tools.run_rules --clip test_data/events/car_exit.mp4 --answer test_data/events/car_exit.json | 2026-11-05 |
+| Rules check: car_dwell (dwell) | Expected=32.00s, Actual=30.72s, Diff=1.28s (PASS) | python -m app.tools.run_rules --clip test_data/events/car_dwell.mp4 --answer test_data/events/car_dwell.json | 2026-11-05 |
+| Rules check: negative clip | Expected=0, Actual=0 (PASS) | python -m app.tools.run_rules --clip test_data/events/car_exit_negative.mp4 --answer test_data/events/car_exit_negative.json | 2026-11-05 |
 
 ## Step reports
 
@@ -1405,3 +1415,43 @@ tests/test_zone_rule_api.py ...........                                   [100%]
 
 
 
+
+
+### Step 10 Follow-up UI Fixes (Items 1-4)
+- **Status:** PASSED
+- **Date:** 2026-11-05
+- **1. What was built:**
+  - **Item 1: Aspect Ratios and Coordinate Mapping:**
+    - Shared `fit(containerW, containerH, frameW, frameH)` letterbox helper in `frontend/src/utils/geometry.ts` and `overlay.ts`.
+    - Coordinates strictly normalized `[0, 1]` relative to `contentRect` across wizard canvas, live wall tile overlays, and track boxes.
+    - Snapshot and video elements use `object-contain` preserving native stream aspect ratios (16:9, 4:3 / ~5 MP).
+    - Vitest unit tests in `geometry.test.ts` and `overlay.test.ts` covering 16:9 and 4:3 across wide, tall, and square containers, plus Playwright E2E 4:3 test in `setup-wizard.spec.ts`.
+  - **Item 2: Always Armed:**
+    - Added "Always armed" checkbox (`toggle-always-armed`) to schedule section in `RuleBuilder.tsx`.
+    - When active: hides days/times inputs and sends payload `schedule: null`. When unchecked: restores schedule.
+    - Updated `generateRuleSentence` in `sentenceGenerator.ts` to output `", at all times"` when schedule is omitted or null.
+    - Added UI help note that live cameras evaluate schedules using the server's wall clock (Asia/Kolkata). Marked active dates as optional.
+  - **Item 3: Rule Builder Admin Redesign:**
+    - Clean neutral slate-900 surface with single amber accent. Removed marketing glows, emojis, gradients, and numbered ALL-CAPS section banners.
+    - Presets consolidated into a single "Start from" `<select data-testid="select-preset">`.
+    - Plain language: "Applies to", "Alert when", "for at least N seconds". Removed "pure logic evaluation" label.
+    - Inline sentence controls (`Alert when [a vehicle] [is inside the zone] for at least [2] seconds`) with plain-text live summary below.
+    - Severity colors applied only on selected state (low = blue, medium = amber, critical = red).
+    - 24-hour HH:MM time inputs and dd/mm/yyyy date inputs with ISO conversion.
+  - **Item 4: Presets:**
+    - Corrected "Person without visible ID" preset to severity `low` with count escalation (`5 in 10m -> medium`), per docs/04 s4.
+    - Disabled unready presets in dropdown: "Unregistered vehicle in zone (Available after Step 12-13)" and "Person without visible ID card (Available after Step 17-18)".
+- **2. Files added/changed:**
+  - `frontend/src/utils/geometry.ts` & `geometry.test.ts`
+  - `frontend/src/utils/overlay.ts` & `overlay.test.ts`
+  - `frontend/src/utils/sentenceGenerator.ts` & `sentenceGenerator.test.ts`
+  - `frontend/src/components/setup/RuleBuilder.tsx` & `RuleBuilder.test.tsx`
+  - `frontend/src/components/setup/ZoneCanvas.tsx`
+  - `frontend/src/components/setup/SetupWizard.tsx`
+  - `frontend/src/components/wall/CameraTile.tsx`
+  - `frontend/e2e/setup-wizard.spec.ts`
+  - `PROGRESS.md`
+- **3. Test Results:**
+  - Backend pytest: 117/117 passed.
+  - Vitest: 78/78 passed across 16 test files.
+  - Playwright: 8/8 passed across `smoke.spec.ts` and `setup-wizard.spec.ts`.

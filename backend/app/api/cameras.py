@@ -256,14 +256,18 @@ def delete_camera(
 
     # Delete dependent relations
     mediamtx_service.remove_camera(row["name"])
-    zone_ids = [z["id"] for z in db.execute("SELECT id FROM zones WHERE camera_id = ?", (cam_id,)).fetchall()]
-    for zid in zone_ids:
-        db.execute("DELETE FROM registered_actions WHERE zone_id = ?", (zid,))
-    db.execute("DELETE FROM zones WHERE camera_id = ?", (cam_id,))
-    db.execute("DELETE FROM calendar_exemptions WHERE camera_id = ?", (cam_id,))
-    db.execute("DELETE FROM user_cameras WHERE camera_id = ?", (cam_id,))
     db.execute("DELETE FROM alerts WHERE target_id = ? AND target_type = 'camera'", (cam_id,))
     db.execute("DELETE FROM events WHERE camera_id = ?", (cam_id,))
+    db.execute("DELETE FROM calendar_exemptions WHERE camera_id = ?", (cam_id,))
+    zone_ids = [z["id"] for z in db.execute("SELECT id FROM zones WHERE camera_id = ?", (cam_id,)).fetchall()]
+    for zid in zone_ids:
+        action_rows = db.execute("SELECT id FROM registered_actions WHERE zone_id = ?", (zid,)).fetchall()
+        for r in action_rows:
+            db.execute("UPDATE events SET action_id = NULL WHERE action_id = ?", (r["id"],))
+            db.execute("DELETE FROM calendar_exemptions WHERE action_id = ?", (r["id"],))
+        db.execute("DELETE FROM registered_actions WHERE zone_id = ?", (zid,))
+    db.execute("DELETE FROM zones WHERE camera_id = ?", (cam_id,))
+    db.execute("DELETE FROM user_cameras WHERE camera_id = ?", (cam_id,))
     db.execute("DELETE FROM cameras WHERE id = ?", (cam_id,))
 
     log_audit(

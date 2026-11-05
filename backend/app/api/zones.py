@@ -305,6 +305,9 @@ def delete_zone(
     # Delete any registered actions attached to this zone
     action_rows = db.execute("SELECT id FROM registered_actions WHERE zone_id = ?", (zone_id,)).fetchall()
     deleted_action_ids = [r["id"] for r in action_rows]
+    for aid in deleted_action_ids:
+        db.execute("UPDATE events SET action_id = NULL WHERE action_id = ?", (aid,))
+        db.execute("DELETE FROM calendar_exemptions WHERE action_id = ?", (aid,))
     if deleted_action_ids:
         db.execute("DELETE FROM registered_actions WHERE zone_id = ?", (zone_id,))
 

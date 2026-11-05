@@ -58,6 +58,8 @@ def setup_db():
     yield
     # Cleanup after test so DB is left clean
     conn = get_connection()
+    conn.execute("DELETE FROM alerts")
+    conn.execute("DELETE FROM events")
     conn.execute("DELETE FROM calendar_exemptions")
     conn.execute("DELETE FROM registered_actions")
     conn.execute("DELETE FROM zones")
@@ -649,6 +651,77 @@ def test_audit_logging_for_zones_and_actions():
     assert "action_created" in actions_logged
     assert "action_updated" in actions_logged
     assert "zone_deleted" in actions_logged
+
+
+def test_delete_action_with_referencing_events_and_exemptions():
+    token = get_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    cam_id = create_test_camera("Cam Delete Action Ref")
+    conn = get_connection()
+
+    # 1. Create special zone
+    resp = client.post(
+        f"/api/v1/cameras/{cam_id}/zones",
+        json={
+            "name": "Delete Test Zone",
+            "kind": "special",
+            "shape": "polygon",
+            "points": [[0.1, 0.1], [0.5, 0.1], [0.5, 0.5], [0.1, 0.5]]
+        },
+        headers=headers
+    )
+    assert resp.status_code == 201
+    zone_id = resp.json()["id"]
+
+    # 2. Create registered action
+    resp = client.post(
+        f"/api/v1/zones/{zone_id}/actions",
+        json={
+            "name": "Action To Delete",
+            "subject": {"kind": "vehicle", "where": []},
+            "trigger": {"template": "presence", "min_seconds": 1.0},
+            "response": {"severity": "medium"}
+        },
+        headers=headers
+    )
+    assert resp.status_code == 201
+    action_id = resp.json()["id"]
+
+    # 3. Insert an event referencing this action_id
+    event_id = "ev_test_action_delete"
+    conn.execute(
+        """
+        INSERT INTO events (id, action_id, zone_id, camera_id, severity, kind, status, started_at, subject_json)
+        VALUES (?, ?, ?, ?, 'medium', 'presence', 'open', 1700000000000, '{}')
+        """,
+        (event_id, action_id, zone_id, cam_id)
+    )
+
+    # 4. Insert an action-scoped calendar exemption referencing this action_id
+    cal_id = "cal_test_action_delete"
+    conn.execute(
+        """
+        INSERT INTO calendar_exemptions (id, label, date_from, date_to, scope, action_id, created_at)
+        VALUES (?, 'Exemption for action', '2026-11-01', '2026-11-02', 'action', ?, 1700000000000)
+        """,
+        (cal_id, action_id)
+    )
+
+    # 5. Delete the action via API
+    del_resp = client.delete(f"/api/v1/actions/{action_id}", headers=headers)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["status"] == "deleted"
+
+    # Action should be gone from registered_actions
+    assert conn.execute("SELECT 1 FROM registered_actions WHERE id = ?", (action_id,)).fetchone() is None
+
+    # Historical event should still exist, but action_id unlinked (NULL)
+    ev_row = conn.execute("SELECT action_id FROM events WHERE id = ?", (event_id,)).fetchone()
+    assert ev_row is not None
+    assert ev_row["action_id"] is None
+
+    # Action-scoped calendar exemption should be cleaned up
+    assert conn.execute("SELECT 1 FROM calendar_exemptions WHERE id = ?", (cal_id,)).fetchone() is None
 
 
 # =========================================================================

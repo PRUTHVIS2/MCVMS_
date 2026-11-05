@@ -13,6 +13,7 @@ from pathlib import Path
 
 from app.api.ws import manager as ws_manager
 from app.attributes.store import AttributeStore
+from app.config import config
 from app.core.clock import Clock
 from app.core.db import get_connection
 from app.core.geometry import point_in_polygon
@@ -143,6 +144,8 @@ class CameraRuntime:
 
         self.last_frame_ts: int = 0
         self.last_track_broadcast_ms: int = 0
+        track_hz = float(config.analysis.get("track_broadcast_hz", 25))
+        self.broadcast_interval_ms = (1000.0 / track_hz) if track_hz > 0 else 40.0
         self.processed_frames: int = 0
         self.is_running: bool = False
 
@@ -202,8 +205,8 @@ class CameraRuntime:
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Error handling decision for camera {self.camera_id}: {e}")
 
-        # Broadcast live tracks for UI overlay canvas (max 10 Hz)
-        if (now_ms - self.last_track_broadcast_ms) >= 100:
+        # Broadcast live tracks for UI overlay canvas (configured in config/app.yaml, default 25 Hz)
+        if (now_ms - self.last_track_broadcast_ms) >= self.broadcast_interval_ms:
             self.last_track_broadcast_ms = now_ms
             w, h = frame.frame_size
             tracks_payload = []

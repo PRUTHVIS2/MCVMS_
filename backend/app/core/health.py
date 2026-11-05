@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.core.db import get_connection
 
 _decode_error_counts: Dict[str, int] = {}
+_dropped_frame_counts: Dict[str, int] = {}
 
 
 def record_decode_error(camera_id: str) -> None:
@@ -22,10 +23,26 @@ def reset_decode_errors() -> None:
     _decode_error_counts.clear()
 
 
+def record_dropped_frame(camera_id: str, count: int = 1) -> None:
+    """Record dropped frames for a specific camera when analyzer falls behind."""
+    _dropped_frame_counts[camera_id] = _dropped_frame_counts.get(camera_id, 0) + count
+
+
+def get_dropped_frames() -> Dict[str, int]:
+    """Retrieve mapping of camera_id to dropped frame counts."""
+    return dict(_dropped_frame_counts)
+
+
+def reset_dropped_frames() -> None:
+    """Reset dropped frame counts (e.g. for testing)."""
+    _dropped_frame_counts.clear()
+
+
 class HealthStatus(BaseModel):
     status: str
     db_locked: bool
     decode_errors: Dict[str, int] = {}
+    dropped_frames: Dict[str, int] = {}
 
 
 def get_health_status() -> HealthStatus:
@@ -40,5 +57,6 @@ def get_health_status() -> HealthStatus:
     return HealthStatus(
         status="ok" if not db_locked else "degraded",
         db_locked=db_locked,
-        decode_errors=get_decode_errors()
+        decode_errors=get_decode_errors(),
+        dropped_frames=get_dropped_frames(),
     )

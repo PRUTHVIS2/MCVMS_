@@ -31,6 +31,18 @@ export function formatScheduleDays(days?: string[]): string {
 }
 
 /**
+ * Format an ISO date (YYYY-MM-DD) or display date string to dd/mm/yyyy.
+ */
+export function formatDateDisplay(d?: string | null): string {
+  if (!d) return '';
+  const m = d.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    return `${m[3]}/${m[2]}/${m[1]}`;
+  }
+  return d;
+}
+
+/**
  * Generate a clear, plain-language live sentence summary for a registered action rule.
  * Docs reference: docs/08_API_AND_UI.md s4
  * Example: "Raise a CRITICAL alert if a truck or bus stays in 'Loading bay' for 2 s, Mon-Sat 09:00-17:00"
@@ -98,7 +110,7 @@ export function generateRuleSentence(spec: Partial<RegisteredActionSpec>, zoneNa
     core = `${subjectDesc} ${triggerDesc}`;
   }
 
-  // 3. Schedule
+  // 3. Schedule (docs/04 s5: omit for always armed)
   let schedulePart = '';
   const daysStr = formatScheduleDays(spec.schedule?.days);
   const fromTime = spec.schedule?.from;
@@ -110,18 +122,22 @@ export function generateRuleSentence(spec: Partial<RegisteredActionSpec>, zoneNa
     schedulePart = `, ${fromTime}-${toTime}`;
   } else if (daysStr) {
     schedulePart = `, ${daysStr}`;
+  } else {
+    schedulePart = ', at all times';
   }
 
-  // 4. Active date validity
+  // 4. Active date validity (formatted as dd/mm/yyyy per requirements)
   let validPart = '';
-  if (spec.valid?.from_date && spec.valid?.until_date) {
-    validPart = ` (active ${spec.valid.from_date} to ${spec.valid.until_date})`;
-  } else if (spec.valid?.from_date) {
-    validPart = ` (active from ${spec.valid.from_date})`;
-  } else if (spec.valid?.until_date) {
-    validPart = ` (active until ${spec.valid.until_date})`;
+  const fromDateDisp = formatDateDisplay(spec.valid?.from_date);
+  const untilDateDisp = formatDateDisplay(spec.valid?.until_date);
+
+  if (fromDateDisp && untilDateDisp) {
+    validPart = ` (active ${fromDateDisp} to ${untilDateDisp})`;
+  } else if (fromDateDisp) {
+    validPart = ` (active from ${fromDateDisp})`;
+  } else if (untilDateDisp) {
+    validPart = ` (active until ${untilDateDisp})`;
   }
 
   return `Raise a ${severity} alert if ${core}${schedulePart}${validPart}.`;
 }
-

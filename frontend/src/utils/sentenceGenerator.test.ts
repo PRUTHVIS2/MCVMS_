@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatScheduleDays, generateRuleSentence } from './sentenceGenerator';
+import { formatScheduleDays, generateRuleSentence, formatDateDisplay } from './sentenceGenerator';
 import type { RegisteredActionSpec } from '../types';
 
 describe('sentenceGenerator', () => {
@@ -27,6 +27,19 @@ describe('sentenceGenerator', () => {
     it('handles empty or undefined days', () => {
       expect(formatScheduleDays([])).toBe('');
       expect(formatScheduleDays(undefined)).toBe('');
+    });
+  });
+
+  describe('formatDateDisplay', () => {
+    it('converts YYYY-MM-DD to dd/mm/yyyy', () => {
+      expect(formatDateDisplay('2026-10-01')).toBe('01/10/2026');
+      expect(formatDateDisplay('2026-11-20')).toBe('20/11/2026');
+    });
+
+    it('preserves already formatted or invalid strings', () => {
+      expect(formatDateDisplay('01/10/2026')).toBe('01/10/2026');
+      expect(formatDateDisplay('')).toBe('');
+      expect(formatDateDisplay(null)).toBe('');
     });
   });
 
@@ -63,7 +76,7 @@ describe('sentenceGenerator', () => {
       );
     });
 
-    it('generates sentence for unregistered vehicle dwelling in parking zone', () => {
+    it('generates sentence for unregistered vehicle dwelling in parking zone with omitted schedule (always armed)', () => {
       const spec: RegisteredActionSpec = {
         name: 'Unregistered vehicle dwelling',
         subject: {
@@ -81,11 +94,11 @@ describe('sentenceGenerator', () => {
 
       const sentence = generateRuleSentence(spec, 'Visitor Parking');
       expect(sentence).toBe(
-        "Raise a MEDIUM alert if an unregistered vehicle dwells in 'Visitor Parking' for longer than 60 s."
+        "Raise a MEDIUM alert if an unregistered vehicle dwells in 'Visitor Parking' for longer than 60 s, at all times."
       );
     });
 
-    it('generates sentence for line crossing zone', () => {
+    it('generates sentence for line crossing zone with omitted schedule (always armed)', () => {
       const spec: RegisteredActionSpec = {
         name: 'Exit Gate Crossing',
         subject: {
@@ -100,10 +113,32 @@ describe('sentenceGenerator', () => {
       };
 
       const sentence = generateRuleSentence(spec, 'Exit Barrier');
-      expect(sentence).toBe("Raise a LOW alert if a vehicle crosses line 'Exit Barrier'.");
+      expect(sentence).toBe("Raise a LOW alert if a vehicle crosses line 'Exit Barrier', at all times.");
     });
 
-    it('generates sentence for person without visible ID card', () => {
+    it('generates sentence when schedule is explicitly null (always armed)', () => {
+      const spec: Partial<RegisteredActionSpec> = {
+        name: 'Always Armed Rule',
+        subject: {
+          kind: 'vehicle',
+        },
+        trigger: {
+          template: 'presence',
+          min_seconds: 2,
+        },
+        schedule: null,
+        response: {
+          severity: 'critical',
+        },
+      };
+
+      const sentence = generateRuleSentence(spec, 'Main Gate');
+      expect(sentence).toBe(
+        "Raise a CRITICAL alert if a vehicle stays in 'Main Gate' for 2 s, at all times."
+      );
+    });
+
+    it('generates sentence for person without visible ID card (always armed)', () => {
       const spec: RegisteredActionSpec = {
         name: 'Person no ID card',
         subject: {
@@ -121,11 +156,11 @@ describe('sentenceGenerator', () => {
 
       const sentence = generateRuleSentence(spec, 'Main Turnstile');
       expect(sentence).toBe(
-        "Raise a CRITICAL alert if a person without a visible ID card stays in 'Main Turnstile' for 1 s."
+        "Raise a CRITICAL alert if a person without a visible ID card stays in 'Main Turnstile' for 1 s, at all times."
       );
     });
 
-    it('includes active calendar dates when configured', () => {
+    it('includes active calendar dates when configured with omitted schedule (always armed)', () => {
       const spec: RegisteredActionSpec = {
         name: 'Exam Period Restriction',
         subject: { kind: 'vehicle' },
@@ -139,9 +174,8 @@ describe('sentenceGenerator', () => {
 
       const sentence = generateRuleSentence(spec, 'Academic Block');
       expect(sentence).toBe(
-        "Raise a MEDIUM alert if a vehicle enters 'Academic Block' (active 2026-11-10 to 2026-11-20)."
+        "Raise a MEDIUM alert if a vehicle enters 'Academic Block', at all times (active 10/11/2026 to 20/11/2026)."
       );
     });
   });
 });
-

@@ -508,6 +508,15 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onCompleted }) => {
               >
                 Undo
               </button>
+              <button
+                type="button"
+                onClick={() => setPoints([])}
+                className="py-1.5 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-xs text-slate-300 border border-slate-800"
+                title="Clear all points"
+                data-testid="btn-clear-points"
+              >
+                Clear
+              </button>
             </div>
           </div>
 
@@ -520,6 +529,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onCompleted }) => {
             existingZones={existingZones}
             points={points}
             onPointsChange={setPoints}
+            frameWidth={cameras.find((c) => c.id === selectedCameraId)?.width}
+            frameHeight={cameras.find((c) => c.id === selectedCameraId)?.height}
           />
 
           {/* Enforcement Notice: Normal vs Special Gating */}

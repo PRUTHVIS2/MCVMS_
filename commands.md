@@ -165,3 +165,13 @@ npm --prefix frontend run dev
 | **Terminal 6** | Backend API | `cd backend; .venv\Scripts\uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` |
 | **Terminal 7** | Frontend Web | `cd frontend; npm run dev` |
 
+
+
+---
+
+## Measuring Bounding Box Lag & Pipeline Stages
+
+To measure live bounding box latency and profile pipeline stages against an active camera stream:
+```powershell
+$env:PYTHONPATH="backend"; backend\.venv\Scripts\python -m app.tools.measure_box_lag --camera cam01 --duration 5 --profile-stages
+```

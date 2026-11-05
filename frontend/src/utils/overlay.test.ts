@@ -22,6 +22,19 @@ describe('overlay coordinate and scaling maths', () => {
     expect(scaled).toEqual({ x: 0, y: 0, w: 0, h: 0 });
   });
 
+  it('scales bounding box with 4:3 frame in 16:9 canvas using letterbox contentRect', () => {
+    // 640x480 frame in 1600x900 canvas -> contentRect is x: 200, y: 0, w: 1200, h: 900
+    const box: [number, number, number, number] = [0, 0, 320, 240];
+    const frameSize: [number, number] = [640, 480];
+    const canvasSize = { width: 1600, height: 900 };
+
+    const scaled = scaleBox(box, frameSize, canvasSize);
+    expect(scaled.x).toBe(200);
+    expect(scaled.y).toBe(0);
+    expect(scaled.w).toBe(600);
+    expect(scaled.h).toBe(450);
+  });
+
   it('correctly converts normalized coordinates [0..1] to canvas coordinates', () => {
     const pt: [number, number] = [0.25, 0.75];
     const canvasSize = { width: 800, height: 600 };

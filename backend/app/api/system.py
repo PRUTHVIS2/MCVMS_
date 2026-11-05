@@ -19,7 +19,7 @@ from app.api.dependencies import get_current_user, require_admin, require_inchar
 from app.config import config, storage_policy
 from app.core.clock import Clock
 from app.core.db import get_db
-from app.core.health import get_decode_errors
+from app.core.health import get_decode_errors, get_dropped_frames
 from app.models.user import UserOut
 
 router = APIRouter(tags=["system"])
@@ -79,6 +79,7 @@ def get_system_health(
 
     # 4. Pipeline queue errors
     decode_errors = get_decode_errors()
+    dropped_frames = get_dropped_frames()
 
     return {
         "status": "ok",
@@ -87,6 +88,7 @@ def get_system_health(
         "disk": disk_info,
         "gpu": gpu_stats,
         "decode_errors": decode_errors,
+        "dropped_frames": dropped_frames,
         "plate_accuracy": {
             "wrong_accepted_rate": 0.0,
             "target": "1 percent or less"
